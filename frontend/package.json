@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "analyze": "ANALYZE=true next build",
+    "preview": "next build && next start",
+    "postinstall": "next telemetry disable",
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
