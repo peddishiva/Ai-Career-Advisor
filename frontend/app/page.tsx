@@ -128,8 +128,11 @@ export default function Home() {
               >
                 Profile
               </Button>
-              <Button className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800">
-                Get Started
+              <Button 
+                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
+                onClick={() => router.push('/search')}
+              >
+                Search
               </Button>
             </div>
           </div>
@@ -153,8 +156,13 @@ export default function Home() {
           >
             <Upload className="mr-2 h-5 w-5" /> Upload Your Resume
           </Button>
-          <Button size="lg" variant="outline" className="text-lg h-12 px-8">
-            Explore Careers
+          <Button 
+            size="lg" 
+            variant="outline" 
+            className="text-lg h-12 px-8"
+            onClick={() => router.push('/search')}
+          >
+            Search
           </Button>
         </div>
       </div>
@@ -206,8 +214,12 @@ export default function Home() {
           <p className="text-xl mb-8 text-blue-100 dark:text-blue-200">
             Join thousands of professionals who have discovered their ideal career paths with our AI-powered platform.
           </p>
-          <Button size="lg" className="bg-white text-blue-600 hover:bg-blue-50 text-lg h-12 px-8">
-            Get Started for Free
+          <Button 
+            size="lg" 
+            className="bg-white text-blue-600 hover:bg-blue-50 text-lg h-12 px-8"
+            onClick={() => router.push('/search')}
+          >
+            Start Searching
           </Button>
         </div>
       </div>
