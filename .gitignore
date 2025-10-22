@@ -1,24 +1,57 @@
 # Dependencies
 node_modules/
 .next/
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+venv/
+env/
+.venv/
+ENV/
+
+# Environment variables
 .env
 .env.local
+.env.development
+.env.test
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local
 
+# Firebase and service account keys
+**/serviceAccountKey.json
+**/firebase-credentials.json
+**/firebase-admin-sdk.json
+**/*-credentials.json
+**/*-keys.json
+
 # Build output
 out/
 build/
+dist/
+*.egg-info/
+.next/
+.nuxt/
+.nuxt-
+.cache/
 
 # Debug logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
 
 # Local development
 .DS_Store
 *.pem
+*.p12
+*.key
+*.crt
+*.cer
 
 # IDE
 .idea/
@@ -27,7 +60,115 @@ yarn-error.log*
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+*.swp
+*.swo
+*~
 
-# Environment variables
+# System Files
+.DS_Store
+Thumbs.db
+
+# Test files
+coverage/
+.nyc_output/
+
+# Local development files
+.local-*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Cache directories
+.cache/
+.temp/
+.tmp/
+.temp/
+.tmp/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
 .env*.local
+
+# parcel-bundler cache (https://parceljs.org/)
+.parcel-cache/
+
+# Next.js build output
+.next
+out
+
+# Production
+build
+
+# Misc
+*.pem
+*.p12
+*.key
+*.crt
+*.cer
+
+# Firebase cache
+.firebase/
+.firebaserc
+
+# Local Netlify folder
+.netlify
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+
+# Next.js
+.next/
+out/
+
+# System Files
+.DS_Store
+Thumbs.db
+
+
+# In .gitignore
+.env
+node_modules/
+uploads/
+*.log
