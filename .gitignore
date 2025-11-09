@@ -179,6 +179,7 @@ uploads/
 
 # ===== DOCUMENTATION: Exclude unnecessary text files =====
 *TROUBLESHOOTING*.txt
+*TROUBLESHOOT*.txt
 *DEBUG*.txt
 *TESTING*.txt
 *UPLOAD*.txt
@@ -186,9 +187,16 @@ uploads/
 *CHECKLIST*.txt
 *GUIDE*.txt
 *VERIFICATION*.txt
+*SETUP*.txt
+*SUMMARY*.txt
 git_setup_commands.txt
 GITHUB_PUSH_GUIDE.txt
 SECURITY_CHECKLIST.txt
+TROUBLESHOOT_JOB_FETCH_ERROR.txt
+TROUBLESHOOT_404_ERROR.txt
+GEMINI_JOB_RECOMMENDATIONS_SETUP.txt
+GITIGNORE_SUMMARY.txt
+DEPLOYMENT_INSTRUCTIONS.txt
 
 # ===== SECURITY: API Keys and Credentials =====
 # Gemini API Key
