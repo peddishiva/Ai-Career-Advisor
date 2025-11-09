@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend-Backend Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .test-result {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+        .success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .warning {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #2196F3;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Frontend ↔ Backend Connection Test</h1>
+        
+        <div class="info">
+            <strong>Current Frontend URL:</strong> <span id="frontendUrl"></span><br>
+            <strong>Backend URL:</strong> http://localhost:5000
+        </div>
+
+        <button onclick="testConnection()">🧪 Test Connection</button>
+        <button onclick="testHealthEndpoint()">❤️ Test Health Endpoint</button>
+        <button onclick="testCORS()">🌐 Test CORS</button>
+        <button onclick="clearResults()">🗑️ Clear Results</button>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Display current URL
+        document.getElementById('frontendUrl').textContent = window.location.origin;
+
+        const BACKEND_URL = 'http://localhost:5000';
+
+        function addResult(title, message, type = 'success') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${type}`;
+            resultDiv.innerHTML = `<strong>${title}</strong><br>${message}`;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        async function testHealthEndpoint() {
+            clearResults();
+            addResult('🔄 Testing...', 'Checking backend health endpoint...', 'warning');
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/health`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addResult(
+                        '✅ Health Check Passed',
+                        `Status: ${response.status}<br>Response: <pre>${JSON.stringify(data, null, 2)}</pre>`,
+                        'success'
+                    );
+                } else {
+                    addResult(
+                        '❌ Health Check Failed',
+                        `Status: ${response.status}<br>Response: ${JSON.stringify(data)}`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                addResult(
+                    '❌ Connection Error',
+                    `Failed to connect to backend:<br>${error.message}<br><br>
+                    <strong>Possible causes:</strong><br>
+                    • Backend server is not running<br>
+                    • CORS is blocking the request<br>
+                    • Wrong backend URL`,
+                    'error'
+                );
+            }
+        }
+
+        async function testCORS() {
+            clearResults();
+            addResult('🔄 Testing CORS...', 'Checking CORS configuration...', 'warning');
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+                
+                const corsHeader = response.headers.get('Access-Control-Allow-Origin');
+                
+                if (corsHeader) {
+                    addResult(
+                        '✅ CORS Configured',
+                        `CORS Header: ${corsHeader}<br>
+                        Frontend Origin: ${window.location.origin}<br>
+                        Status: ${corsHeader === window.location.origin || corsHeader === '*' ? 'Allowed ✅' : 'May have issues ⚠️'}`,
+                        corsHeader === window.location.origin || corsHeader === '*' ? 'success' : 'warning'
+                    );
+                } else {
+                    addResult(
+                        '⚠️ No CORS Header',
+                        'No Access-Control-Allow-Origin header found',
+                        'warning'
+                    );
+                }
+            } catch (error) {
+                addResult(
+                    '❌ CORS Test Failed',
+                    `Error: ${error.message}<br><br>This likely means CORS is blocking the request.`,
+                    'error'
+                );
+            }
+        }
+
+        async function testConnection() {
+            clearResults();
+            addResult('🔄 Running Full Connection Test...', 'Testing all endpoints...', 'warning');
+            
+            // Test 1: Health endpoint
+            try {
+                const healthResponse = await fetch(`${BACKEND_URL}/health`);
+                const healthData = await healthResponse.json();
+                
+                if (healthResponse.ok) {
+                    addResult(
+                        '✅ Test 1: Health Endpoint',
+                        `Backend is responding correctly<br>Response: <pre>${JSON.stringify(healthData, null, 2)}</pre>`,
+                        'success'
+                    );
+                } else {
+                    addResult(
+                        '❌ Test 1: Health Endpoint Failed',
+                        `Status: ${healthResponse.status}`,
+                        'error'
+                    );
+                    return;
+                }
+            } catch (error) {
+                addResult(
+                    '❌ Test 1: Health Endpoint Failed',
+                    `Cannot connect to backend: ${error.message}`,
+                    'error'
+                );
+                return;
+            }
+
+            // Test 2: Root endpoint
+            try {
+                const rootResponse = await fetch(`${BACKEND_URL}/`);
+                const rootData = await rootResponse.json();
+                
+                if (rootResponse.ok) {
+                    addResult(
+                        '✅ Test 2: Root Endpoint',
+                        `Response: <pre>${JSON.stringify(rootData, null, 2)}</pre>`,
+                        'success'
+                    );
+                } else {
+                    addResult(
+                        '⚠️ Test 2: Root Endpoint',
+                        `Status: ${rootResponse.status}`,
+                        'warning'
+                    );
+                }
+            } catch (error) {
+                addResult(
+                    '⚠️ Test 2: Root Endpoint',
+                    `Error: ${error.message}`,
+                    'warning'
+                );
+            }
+
+            // Final summary
+            addResult(
+                '🎉 Connection Test Complete',
+                `Frontend (${window.location.origin}) can successfully communicate with Backend (${BACKEND_URL})!<br><br>
+                <strong>Next steps:</strong><br>
+                • Upload a resume to test file upload<br>
+                • Search for jobs to test API integration<br>
+                • Check saved jobs in profile`,
+                'success'
+            );
+        }
+
+        // Auto-run test on page load
+        window.addEventListener('load', () => {
+            setTimeout(testConnection, 500);
+        });
+    </script>
+</body>
+</html>

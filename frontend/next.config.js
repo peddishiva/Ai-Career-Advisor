@@ -14,15 +14,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Enable React's new concurrent features
-  experimental: {
-    serverActions: true,
-    optimizeCss: true,
-  },
-  // Enable static exports for static site generation
-  output: 'standalone',
-  // Enable proper source maps for production
-  productionBrowserSourceMaps: true,
+  // Vercel handles output automatically
+  // Disable source maps for faster builds
+  productionBrowserSourceMaps: false,
   // Configure build output
   distDir: '.next',
   generateBuildId: async () => {
