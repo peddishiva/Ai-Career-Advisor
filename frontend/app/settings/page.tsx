@@ -1,21 +1,69 @@
 'use client';
 
-import { useState, ChangeEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/components/ui/use-toast';
+import { Briefcase, MapPin, DollarSign, Clock, Trash2, ExternalLink } from 'lucide-react';
+
+interface SavedJob {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  salary: string;
+  posted: string;
+  description: string;
+  tags: string[];
+  type?: string;
+  experience?: string;
+}
 
 export default function SettingsPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { theme, setTheme } = useTheme();
   const [username, setUsername] = useState('John Doe');
   const [email, setEmail] = useState('john.doe@example.com');
   const [isSaving, setIsSaving] = useState(false);
   const [avatar, setAvatar] = useState('/default-avatar.jpg');
+  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Load saved jobs from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('savedJobs');
+    if (saved) {
+      try {
+        setSavedJobs(JSON.parse(saved));
+      } catch (e) {
+        console.error('Error loading saved jobs:', e);
+      }
+    }
+  }, []);
+
+  // Sync dark mode state with theme
+  useEffect(() => {
+    setDarkMode(theme === 'dark');
+  }, [theme]);
+
+  // Handle dark mode toggle
+  const handleDarkModeToggle = () => {
+    const newTheme = darkMode ? 'light' : 'dark';
+    setTheme(newTheme);
+    setDarkMode(!darkMode);
+    
+    toast({
+      title: 'Theme updated',
+      description: `Switched to ${newTheme} mode`,
+    });
+  };
 
   const handleSaveChanges = async () => {
     try {
@@ -49,6 +97,17 @@ export default function SettingsPage() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const removeSavedJob = (jobId: string) => {
+    const updatedJobs = savedJobs.filter(job => job.id !== jobId);
+    setSavedJobs(updatedJobs);
+    localStorage.setItem('savedJobs', JSON.stringify(updatedJobs));
+    
+    toast({
+      title: 'Job removed',
+      description: 'Job has been removed from your saved list.',
+    });
   };
 
   return (
@@ -145,7 +204,18 @@ export default function SettingsPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Receive email notifications</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" defaultChecked />
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={emailNotifications}
+                      onChange={(e) => {
+                        setEmailNotifications(e.target.checked);
+                        toast({
+                          title: 'Notification settings updated',
+                          description: `Email notifications ${e.target.checked ? 'enabled' : 'disabled'}`,
+                        });
+                      }}
+                    />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
@@ -155,11 +225,126 @@ export default function SettingsPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Switch between light and dark theme</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" defaultChecked />
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={darkMode}
+                      onChange={handleDarkModeToggle}
+                    />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Saved Jobs Section */}
+          <Card className="dark:bg-gray-800 dark:border-gray-700">
+            <CardHeader>
+              <CardTitle className="text-xl dark:text-white">Saved Jobs</CardTitle>
+              <CardDescription className="dark:text-gray-300">
+                Jobs you've saved for later ({savedJobs.length})
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {savedJobs.length === 0 ? (
+                <div className="text-center py-12">
+                  <Briefcase className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-4 text-sm font-medium text-gray-900 dark:text-white">No saved jobs</h3>
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    Start saving jobs you're interested in from the job recommendations page.
+                  </p>
+                  <Button
+                    onClick={() => router.push('/job-recommendation')}
+                    className="mt-4 bg-blue-600 hover:bg-blue-700"
+                  >
+                    Browse Jobs
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {savedJobs.map((job) => (
+                    <div
+                      key={job.id}
+                      className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                                {job.title}
+                              </h3>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">{job.company}</p>
+                            </div>
+                            {job.type && (
+                              <span className="ml-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/20 dark:text-blue-200">
+                                {job.type}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-600 dark:text-gray-400">
+                            <span className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {job.location}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <DollarSign className="h-3 w-3" />
+                              {job.salary}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {job.posted}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {job.tags.slice(0, 4).map((tag) => (
+                              <span
+                                key={tag}
+                                className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                            {job.tags.length > 4 && (
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                +{job.tags.length - 4} more
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-4 flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-700"
+                              onClick={() => {
+                                window.open(
+                                  `https://www.google.com/search?q=${encodeURIComponent(job.title + ' ' + job.company + ' job application')}`,
+                                  '_blank'
+                                );
+                              }}
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Apply
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                              onClick={() => removeSavedJob(job.id)}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

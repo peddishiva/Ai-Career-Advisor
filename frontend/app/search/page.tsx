@@ -24,12 +24,13 @@ export default function SearchPage() {
     e.preventDefault();
     if (searchQuery.trim()) {
       setIsLoading(true);
-      // Simulate search loading
+      // Store search query in localStorage for the job recommendation page
+      localStorage.setItem('jobSearchQuery', searchQuery);
+      
+      // Redirect to job recommendation page
       setTimeout(() => {
-        // Here you would typically make an API call with the search query
-        console.log('Searching for:', searchQuery);
-        setIsLoading(false);
-      }, 1000);
+        router.push('/job-recommendation');
+      }, 500);
     }
   };
 

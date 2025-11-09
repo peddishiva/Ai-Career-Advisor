@@ -1,0 +1,305 @@
+═══════════════════════════════════════════════════════════════════
+  DEPLOYMENT GUIDE - GitHub & Vercel
+═══════════════════════════════════════════════════════════════════
+
+✅ PROJECT IS READY FOR DEPLOYMENT!
+
+This guide will help you push your code to GitHub and deploy to Vercel.
+
+═══════════════════════════════════════════════════════════════════
+📋 PRE-DEPLOYMENT CHECKLIST
+═══════════════════════════════════════════════════════════════════
+
+✅ .gitignore configured (excludes unnecessary .md files)
+✅ vercel.json configured
+✅ next.config.js optimized
+✅ .env.example created
+✅ All sensitive files excluded
+✅ Frontend ready for deployment
+✅ Backend API URL configurable
+
+═══════════════════════════════════════════════════════════════════
+PART 1: PUSH TO GITHUB
+═══════════════════════════════════════════════════════════════════
+
+STEP 1: Initialize Git (if not already done)
+─────────────────────────────────────────────────────────────────
+git init
+
+STEP 2: Add all files
+─────────────────────────────────────────────────────────────────
+git add .
+
+STEP 3: Commit
+─────────────────────────────────────────────────────────────────
+git commit -m "Initial commit: AI Career Advisor project"
+
+STEP 4: Create GitHub repository
+─────────────────────────────────────────────────────────────────
+1. Go to: https://github.com/new
+2. Repository name: AiCareerAvisor (or your choice)
+3. Description: AI-powered career guidance platform
+4. Visibility: Public or Private
+5. DO NOT initialize with README (we already have one)
+6. Click "Create repository"
+
+STEP 5: Add remote and push
+─────────────────────────────────────────────────────────────────
+# Replace YOUR_USERNAME with your GitHub username
+git remote add origin https://github.com/YOUR_USERNAME/AiCareerAvisor.git
+git branch -M main
+git push -u origin main
+
+═══════════════════════════════════════════════════════════════════
+PART 2: DEPLOY FRONTEND TO VERCEL
+═══════════════════════════════════════════════════════════════════
+
+STEP 1: Sign up/Login to Vercel
+─────────────────────────────────────────────────────────────────
+1. Go to: https://vercel.com
+2. Click "Sign Up" or "Login"
+3. Choose "Continue with GitHub"
+4. Authorize Vercel to access your GitHub
+
+STEP 2: Import Project
+─────────────────────────────────────────────────────────────────
+1. Click "Add New..." → "Project"
+2. Find your "AiCareerAvisor" repository
+3. Click "Import"
+
+STEP 3: Configure Project
+─────────────────────────────────────────────────────────────────
+Framework Preset: Next.js (should auto-detect)
+Root Directory: frontend
+Build Command: npm run build
+Output Directory: .next
+Install Command: npm install
+
+STEP 4: Environment Variables
+─────────────────────────────────────────────────────────────────
+Click "Environment Variables" and add:
+
+Key: NEXT_PUBLIC_API_URL
+Value: YOUR_BACKEND_URL (see Backend Deployment section)
+
+Example:
+- For testing: http://localhost:5000
+- For production: https://your-backend.railway.app
+
+STEP 5: Deploy
+─────────────────────────────────────────────────────────────────
+1. Click "Deploy"
+2. Wait for build to complete (2-5 minutes)
+3. Your site will be live at: https://your-project.vercel.app
+
+═══════════════════════════════════════════════════════════════════
+PART 3: DEPLOY BACKEND (OPTIONAL)
+═══════════════════════════════════════════════════════════════════
+
+The backend needs to be deployed separately. Options:
+
+OPTION 1: Railway.app
+─────────────────────────────────────────────────────────────────
+1. Go to: https://railway.app
+2. Sign up with GitHub
+3. Click "New Project" → "Deploy from GitHub repo"
+4. Select your repository
+5. Set root directory: backend
+6. Add environment variables:
+   - GEMINI_API_KEY=your-gemini-api-key
+7. Deploy
+
+OPTION 2: Render.com
+─────────────────────────────────────────────────────────────────
+1. Go to: https://render.com
+2. Sign up with GitHub
+3. Click "New +" → "Web Service"
+4. Connect your repository
+5. Set:
+   - Root Directory: backend
+   - Build Command: pip install -r requirements.txt
+   - Start Command: python main.py
+6. Add environment variables:
+   - GEMINI_API_KEY=your-gemini-api-key
+7. Deploy
+
+OPTION 3: Heroku
+─────────────────────────────────────────────────────────────────
+1. Install Heroku CLI
+2. heroku login
+3. heroku create your-app-name
+4. git subtree push --prefix backend heroku main
+5. heroku config:set GEMINI_API_KEY=your-key
+
+═══════════════════════════════════════════════════════════════════
+PART 4: UPDATE FRONTEND WITH BACKEND URL
+═══════════════════════════════════════════════════════════════════
+
+After deploying backend:
+
+1. Go to Vercel Dashboard
+2. Select your project
+3. Go to "Settings" → "Environment Variables"
+4. Update NEXT_PUBLIC_API_URL with your backend URL
+5. Redeploy (Vercel will auto-redeploy)
+
+═══════════════════════════════════════════════════════════════════
+🔐 SECURITY CHECKLIST
+═══════════════════════════════════════════════════════════════════
+
+✅ GEMINI_API_KEY not in code (use environment variables)
+✅ Firebase credentials not in code
+✅ .env files excluded from Git
+✅ Sensitive .md files excluded
+✅ Backend uploads directory excluded
+✅ API keys in Vercel environment variables only
+
+═══════════════════════════════════════════════════════════════════
+📊 WHAT GETS PUSHED TO GITHUB
+═══════════════════════════════════════════════════════════════════
+
+INCLUDED:
+✅ Source code (frontend & backend)
+✅ README.md
+✅ package.json, requirements.txt
+✅ Configuration files
+✅ .gitignore
+✅ .env.example
+
+EXCLUDED:
+❌ All other .md files (except README.md)
+❌ .env files with actual keys
+❌ node_modules/
+❌ .next/ build output
+❌ __pycache__/
+❌ uploads/ directory
+❌ All .txt documentation files
+❌ API keys and credentials
+
+═══════════════════════════════════════════════════════════════════
+🧪 VERIFY DEPLOYMENT
+═══════════════════════════════════════════════════════════════════
+
+Frontend Checks:
+─────────────────────────────────────────────────────────────────
+✓ Site loads at Vercel URL
+✓ Dark mode works
+✓ Navigation works
+✓ Pages load correctly
+✓ No console errors
+
+Backend Checks (if deployed):
+─────────────────────────────────────────────────────────────────
+✓ Health endpoint works: /health
+✓ CORS configured for frontend URL
+✓ API endpoints respond
+✓ Gemini API key works
+
+Integration Checks:
+─────────────────────────────────────────────────────────────────
+✓ Frontend can connect to backend
+✓ Resume upload works
+✓ Job recommendations load
+✓ Analysis page works
+
+═══════════════════════════════════════════════════════════════════
+🚨 COMMON ISSUES & SOLUTIONS
+═══════════════════════════════════════════════════════════════════
+
+ISSUE 1: Build fails on Vercel
+─────────────────────────────────────────────────────────────────
+SOLUTION:
+- Check build logs in Vercel dashboard
+- Ensure all dependencies in package.json
+- Check TypeScript errors (currently ignored)
+- Verify root directory is set to "frontend"
+
+ISSUE 2: "Cannot connect to backend"
+─────────────────────────────────────────────────────────────────
+SOLUTION:
+- Verify NEXT_PUBLIC_API_URL is set in Vercel
+- Check backend is deployed and running
+- Verify CORS allows your Vercel domain
+- Test backend URL directly
+
+ISSUE 3: Environment variables not working
+─────────────────────────────────────────────────────────────────
+SOLUTION:
+- Ensure variable name starts with NEXT_PUBLIC_
+- Redeploy after adding variables
+- Check variable is set in Vercel dashboard
+- Clear cache and redeploy
+
+ISSUE 4: 404 errors on page refresh
+─────────────────────────────────────────────────────────────────
+SOLUTION:
+- Already configured in vercel.json
+- Ensure vercel.json is in frontend directory
+- Check routes configuration
+
+═══════════════════════════════════════════════════════════════════
+📝 POST-DEPLOYMENT TASKS
+═══════════════════════════════════════════════════════════════════
+
+1. Update README.md with live URLs
+2. Test all features on production
+3. Set up custom domain (optional)
+4. Configure analytics (optional)
+5. Set up monitoring (optional)
+6. Enable automatic deployments from GitHub
+
+═══════════════════════════════════════════════════════════════════
+🔄 CONTINUOUS DEPLOYMENT
+═══════════════════════════════════════════════════════════════════
+
+Vercel automatically deploys when you push to GitHub:
+
+1. Make changes locally
+2. git add .
+3. git commit -m "Your commit message"
+4. git push
+5. Vercel auto-deploys (check dashboard)
+
+═══════════════════════════════════════════════════════════════════
+📞 SUPPORT & RESOURCES
+═══════════════════════════════════════════════════════════════════
+
+Vercel Documentation:
+https://vercel.com/docs
+
+Next.js Deployment:
+https://nextjs.org/docs/deployment
+
+GitHub Documentation:
+https://docs.github.com
+
+═══════════════════════════════════════════════════════════════════
+✅ QUICK COMMAND REFERENCE
+═══════════════════════════════════════════════════════════════════
+
+# Push to GitHub
+git add .
+git commit -m "Your message"
+git push
+
+# Check what will be pushed
+git status
+
+# View excluded files
+git status --ignored
+
+# Check remote
+git remote -v
+
+═══════════════════════════════════════════════════════════════════
+🎉 YOU'RE READY TO DEPLOY!
+═══════════════════════════════════════════════════════════════════
+
+Your project is configured and ready for:
+✅ GitHub push
+✅ Vercel deployment
+✅ Production use
+
+Follow the steps above and you'll be live in minutes!
+
+═══════════════════════════════════════════════════════════════════

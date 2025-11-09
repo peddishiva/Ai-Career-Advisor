@@ -172,3 +172,42 @@ Thumbs.db
 node_modules/
 uploads/
 *.log
+
+# ===== SECURITY: Exclude all Markdown documentation files =====
+*.md
+!README.md
+
+# ===== DOCUMENTATION: Exclude unnecessary text files =====
+*TROUBLESHOOTING*.txt
+*DEBUG*.txt
+*TESTING*.txt
+*UPLOAD*.txt
+*FLOW*.txt
+*CHECKLIST*.txt
+*GUIDE*.txt
+*VERIFICATION*.txt
+git_setup_commands.txt
+GITHUB_PUSH_GUIDE.txt
+SECURITY_CHECKLIST.txt
+
+# ===== SECURITY: API Keys and Credentials =====
+# Gemini API Key
+**/GEMINI_API_KEY*
+**/*gemini*key*
+**/*api*key*.txt
+
+# Python environment files
+.env.python
+**/.env*
+!.env.example
+
+# Backend uploads and analysis data
+backend/uploads/
+backend/uploads/**/*
+
+# Sensitive configuration
+**/config/serviceAccountKey.json
+**/serviceAccountKey.json
+**/*credentials*.json
+**/*-key.json
+**/*-keys.json

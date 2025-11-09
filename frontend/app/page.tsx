@@ -68,26 +68,64 @@ export default function Home() {
     try {
       // Create form data
       const formData = new FormData();
-      formData.append('resume', file);
+      formData.append('file', file);
 
-      // Here you would typically send the file to your backend
-      // For now, we'll just simulate an API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      console.log('Uploading file to backend...');
+      
+      // Upload to Python backend (use environment variable for production)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${apiUrl}/api/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      console.log('Response status:', response.status);
+      
+      const data = await response.json();
+      console.log('Response data:', data);
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Upload failed');
+      }
       
       toast({
         title: 'Upload successful!',
-        description: 'Your resume has been uploaded successfully.',
+        description: 'Your resume has been analyzed successfully.',
       });
       
-      // Reset after successful upload
+      // Store analysis data in localStorage for the analysis page
+      if (data.analysis) {
+        localStorage.setItem('resumeAnalysis', JSON.stringify(data.analysis));
+        console.log('Analysis data stored in localStorage');
+      }
+      
+      // Reset file
       setFile(null);
+      
+      console.log('Redirecting to analysis page...');
+      
+      // Redirect to analysis page after short delay
+      setTimeout(() => {
+        router.push('/analysis');
+      }, 1000);
+      
     } catch (error) {
       console.error('Upload error:', error);
-      toast({
-        title: 'Upload failed',
-        description: 'There was an error uploading your resume. Please try again.',
-        variant: 'destructive',
-      });
+      
+      // Check if it's a network error (backend not running)
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        toast({
+          title: 'Backend not running',
+          description: 'Please start the Python backend server first. Run: cd backend && python main.py',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Upload failed',
+          description: error instanceof Error ? error.message : 'There was an error uploading your resume. Please try again.',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setIsUploading(false);
     }
@@ -103,7 +141,10 @@ export default function Home() {
       <nav className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
-            <div className="flex items-center">
+            <div 
+              className="flex items-center cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => router.push('/')}
+            >
               <BookOpen className="h-8 w-8 text-blue-600 dark:text-blue-500" />
               <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">AI Career Advisor</span>
             </div>
@@ -120,6 +161,20 @@ export default function Home() {
                 ) : (
                   <Moon className="h-5 w-5" />
                 )}
+              </Button>
+              <Button 
+                variant="ghost" 
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/job-recommendation')}
+              >
+                Job Recommendations
+              </Button>
+              <Button 
+                variant="ghost" 
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/analysis')}
+              >
+                Analysis
               </Button>
               <Button 
                 variant="ghost" 
@@ -182,20 +237,27 @@ export default function Home() {
               {
                 icon: <FileText className="h-10 w-10 text-blue-600 mb-4" />,
                 title: "Upload Your Resume",
-                description: "Easily upload your resume or fill in your details manually."
+                description: "Easily upload your resume or fill in your details manually.",
+                onClick: () => scrollToUpload()
               },
               {
                 icon: <BarChart3 className="h-10 w-10 text-blue-600 mb-4" />,
                 title: "Get AI Analysis",
-                description: "Our AI analyzes your skills, experience, and preferences."
+                description: "Our AI analyzes your skills, experience, and preferences.",
+                onClick: () => router.push('/analysis')
               },
               {
                 icon: <Lightbulb className="h-10 w-10 text-blue-600 mb-4" />,
                 title: "Receive Recommendations",
-                description: "Get personalized career paths and skill development suggestions."
+                description: "Get personalized career paths and skill development suggestions.",
+                onClick: () => router.push('/job-recommendation')
               }
             ].map((feature, index) => (
-              <Card key={index} className="p-6 text-center hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700">
+              <Card 
+                key={index} 
+                className="p-6 text-center hover:shadow-lg transition-all cursor-pointer hover:scale-105 dark:bg-gray-800 dark:border-gray-700"
+                onClick={feature.onClick}
+              >
                 <div className="flex justify-center">
                   {feature.icon}
                 </div>
