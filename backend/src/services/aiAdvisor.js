@@ -1,7 +1,7 @@
 class AIAdvisor {
   constructor(apiKey) {
     this.apiKey = apiKey || process.env.GEMINI_API_KEY;
-    this.apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+    this.apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent';
   }
 
   async analyzeResume(resumeText, jobTitle = 'Software Engineer') {
