@@ -3,7 +3,6 @@ Test connectivity between frontend and backend
 """
 import sys
 import requests
-import json
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')

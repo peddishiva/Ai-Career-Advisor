@@ -1,251 +1,410 @@
 """
-Scoring Logic for Resume Analysis
-Calculates fit scores, skill levels, and role matches
+Deterministic Evidence-Based Scoring Engine
+Calculates profile strength, skill proficiency levels, role matches, and gap-driven actions with zero randomness.
 """
 
-import random
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any, Optional, Set
+import re
+
+from config.roles import ROLE_DEFINITIONS
+from config.skill_aliases import satisfies_skill
+from config.scoring_config import (
+    PROFILE_STRENGTH_WEIGHTS,
+    ROLE_MATCH_WEIGHTS,
+    SKILL_EVIDENCE_POINTS,
+    IMPACT_ACTION_VERBS,
+    ALIGNMENT_THRESHOLDS
+)
+from utils.normalization import normalize_skill_list
 
 
 class ScoringEngine:
-    """Calculate various scores and metrics for resume analysis"""
+    """Deterministic, evidence-based resume scoring engine."""
     
-    # Skill categories and their weights
-    SKILL_CATEGORIES = {
-        'technical': ['python', 'java', 'javascript', 'sql', 'r', 'c++', 'c#', 
-                     'machine learning', 'deep learning', 'data science'],
-        'analytical': ['data analysis', 'statistics', 'analytics', 'excel', 
-                      'tableau', 'power bi', 'looker', 'reporting'],
-        'soft_skills': ['leadership', 'communication', 'teamwork', 'problem solving',
-                       'project management', 'agile', 'scrum'],
-        'tools': ['aws', 'azure', 'gcp', 'docker', 'kubernetes', 'git']
-    }
-    
-    # Role definitions with required skills
-    ROLE_DEFINITIONS = {
-        'Data Analyst': {
-            'required_skills': ['sql', 'data analysis', 'excel', 'python'],
-            'preferred_skills': ['tableau', 'power bi', 'statistics', 'reporting'],
-            'base_score': 75
-        },
-        'Product Analyst': {
-            'required_skills': ['data analysis', 'sql', 'communication'],
-            'preferred_skills': ['a/b testing', 'product strategy', 'storytelling'],
-            'base_score': 70
-        },
-        'Business Intelligence Analyst': {
-            'required_skills': ['sql', 'tableau', 'data analysis'],
-            'preferred_skills': ['power bi', 'reporting', 'leadership'],
-            'base_score': 72
-        },
-        'Data Scientist': {
-            'required_skills': ['python', 'machine learning', 'statistics'],
-            'preferred_skills': ['deep learning', 'r', 'data science'],
-            'base_score': 68
-        },
-        'Software Engineer': {
-            'required_skills': ['python', 'javascript', 'git'],
-            'preferred_skills': ['react', 'node', 'docker', 'aws'],
-            'base_score': 65
-        }
-    }
-    
-    def calculate_overall_fit_score(self, parsed_data: Dict) -> int:
-        """Calculate overall fit score (0-100)"""
-        score = 50  # Base score
+    def __init__(self):
+        self.role_definitions = ROLE_DEFINITIONS
+        self.profile_weights = PROFILE_STRENGTH_WEIGHTS
+        self.role_weights = ROLE_MATCH_WEIGHTS
+        self.evidence_points = SKILL_EVIDENCE_POINTS
+        self.action_verbs = IMPACT_ACTION_VERBS
         
-        # Skills contribution (up to 30 points)
-        skills = [s.lower() for s in parsed_data.get('skills', [])]
-        skill_score = min(len(skills) * 2, 30)
-        score += skill_score
+    def calculate_skill_evidence_score(self, skill_name: str, parsed_data: Dict[str, Any]) -> int:
+        """
+        Calculate an individual skill's evidence score (0-100) based on contextual occurrence across resume sections.
+        """
+        score = 0
+        skill_lower = skill_name.lower()
         
-        # Experience contribution (up to 15 points)
+        section_evidence = parsed_data.get('section_evidence', {})
+        skills_sec = [s.lower() for s in section_evidence.get('skills_section', [])]
+        exp_skills = [s.lower() for s in section_evidence.get('experience_skills', [])]
+        proj_skills = [s.lower() for s in section_evidence.get('project_skills', [])]
+        freq_map = section_evidence.get('all_skill_frequencies', {})
+        
+        # 1. Listed in dedicated Skills section
+        if skill_lower in skills_sec or any(skill_lower in s for s in skills_sec):
+            score += self.evidence_points['in_skills_section']
+            
+        # 2. Applied in Work Experience
+        if skill_lower in exp_skills:
+            score += self.evidence_points['in_experience_entry']
+            
+        # 3. Demonstrated in Projects
+        proj_occurrences = sum(
+            1 for p in parsed_data.get('projects', []) 
+            if skill_lower in [t.lower() for t in p.get('technologies', [])] or skill_lower in p.get('description', '').lower()
+        )
+        if proj_occurrences >= 1:
+            score += self.evidence_points['in_project_entry']
+        if proj_occurrences >= 2:
+            score += self.evidence_points['in_multiple_projects']
+            
+        # 4. Contextual Impact / Action Verbs nearby
+        raw_text = parsed_data.get('raw_text', '').lower()
+        # Check if the skill co-occurs in sentences containing impact verbs
+        has_impact = False
+        for verb in self.action_verbs:
+            if verb in raw_text and skill_lower in raw_text:
+                # Check rough proximity (within ~150 characters)
+                for sentence in re.split(r'[.\n•]', raw_text):
+                    if verb in sentence and skill_lower in sentence:
+                        has_impact = True
+                        break
+            if has_impact:
+                break
+                
+        if has_impact:
+            score += self.evidence_points['action_impact_context']
+            
+        # Frequency bonus for high repetition (up to +10)
+        total_freq = freq_map.get(skill_name, 0)
+        if total_freq > 3:
+            score += min((total_freq - 3) * 3, 10)
+            
+        # Baseline minimum for any verified extracted skill
+        if score == 0 and skill_name in parsed_data.get('skills', []):
+            score = 30
+            
+        return min(max(score, 0), self.evidence_points['max_score'])
+    
+    def calculate_skill_strengths(self, parsed_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Calculate individual evidence scores for the candidate's actual detected skills.
+        Returns top skills ranked by verified evidence level.
+        """
+        extracted_skills = parsed_data.get('skills', [])
+        
+        if not extracted_skills:
+            return []
+            
+        evaluated_skills = []
+        for skill in extracted_skills:
+            score = self.calculate_skill_evidence_score(skill, parsed_data)
+            evaluated_skills.append({
+                'name': skill,
+                'level': score
+            })
+            
+        # Sort descending by evidence score, then alphabetically
+        evaluated_skills.sort(key=lambda x: (-x['level'], x['name']))
+        
+        # Return top 6 most prominent skills for the candidate
+        return evaluated_skills[:6]
+    
+    def calculate_role_matches(self, parsed_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Calculate deterministic role matches against all configured role definitions.
+        Returns top 3 matched roles sorted by match percentage with full explainability.
+        """
+        candidate_skills = set(parsed_data.get('skills', []))
+        candidate_skills_lower = {s.lower() for s in candidate_skills}
+        
         experience = parsed_data.get('experience', [])
-        exp_score = min(len(experience) * 3, 15)
-        score += exp_score
-        
-        # Education contribution (up to 10 points)
-        education = parsed_data.get('education', [])
-        edu_score = min(len(education) * 5, 10)
-        score += edu_score
-        
-        # Projects contribution (up to 10 points)
         projects = parsed_data.get('projects', [])
-        proj_score = min(len(projects) * 2, 10)
-        score += proj_score
+        education = parsed_data.get('education', [])
+        raw_text_lower = parsed_data.get('raw_text', '').lower()
         
-        # Add some randomness for variation (±5 points)
-        score += random.randint(-5, 5)
-        
-        return min(max(score, 0), 100)
-    
-    def calculate_role_alignment(self, fit_score: int) -> str:
-        """Determine role alignment level"""
-        if fit_score >= 80:
-            return "High"
-        elif fit_score >= 60:
-            return "Medium"
-        else:
-            return "Low"
-    
-    def calculate_skill_momentum(self, parsed_data: Dict) -> int:
-        """Calculate skill momentum percentage"""
-        # Base momentum on number of skills and recent projects
-        skills_count = len(parsed_data.get('skills', []))
-        projects_count = len(parsed_data.get('projects', []))
-        
-        momentum = 5 + (skills_count // 3) + (projects_count * 2)
-        momentum += random.randint(-3, 3)
-        
-        return min(max(momentum, 0), 25)
-    
-    def calculate_skill_strengths(self, parsed_data: Dict) -> List[Dict[str, any]]:
-        """Calculate individual skill strength percentages"""
-        skills = [s.lower() for s in parsed_data.get('skills', [])]
-        
-        # Predefined skill categories to analyze
-        skill_analysis = {
-            'Python': 0,
-            'Data Analysis': 0,
-            'Communication': 0,
-            'Leadership': 0
-        }
-        
-        # Calculate scores based on presence and context
-        if 'python' in skills:
-            skill_analysis['Python'] = random.randint(75, 90)
-        else:
-            skill_analysis['Python'] = random.randint(40, 65)
-        
-        if any(s in skills for s in ['data analysis', 'analytics', 'statistics']):
-            skill_analysis['Data Analysis'] = random.randint(70, 85)
-        else:
-            skill_analysis['Data Analysis'] = random.randint(35, 60)
-        
-        if 'communication' in skills or 'leadership' in skills:
-            skill_analysis['Communication'] = random.randint(65, 80)
-        else:
-            skill_analysis['Communication'] = random.randint(45, 65)
-        
-        if 'leadership' in skills or 'project management' in skills:
-            skill_analysis['Leadership'] = random.randint(55, 75)
-        else:
-            skill_analysis['Leadership'] = random.randint(35, 60)
-        
-        return [
-            {'name': name, 'level': level}
-            for name, level in skill_analysis.items()
-        ]
-    
-    def calculate_role_matches(self, parsed_data: Dict) -> List[Dict[str, any]]:
-        """Calculate top role matches with percentages"""
-        skills = [s.lower() for s in parsed_data.get('skills', [])]
         role_matches = []
         
-        for role_name, role_data in self.ROLE_DEFINITIONS.items():
-            score = role_data['base_score']
+        for role_name, role_data in self.role_definitions.items():
+            req_skills = role_data.get('required_skills', [])
+            pref_skills = role_data.get('preferred_skills', [])
+            relevant_degrees = role_data.get('relevant_degrees', [])
+            exp_keywords = role_data.get('experience_keywords', [])
             
-            # Check required skills
-            required_matches = sum(1 for skill in role_data['required_skills'] 
-                                  if skill in skills)
-            score += required_matches * 5
+            # 1. Required Skills Score (45%)
+            matched_req = []
+            req_evidence_sum = 0
+            for skill in req_skills:
+                if satisfies_skill(skill, candidate_skills):
+                    matched_req.append(skill)
+                    req_evidence_sum += self.calculate_skill_evidence_score(skill, parsed_data)
+                    
+            req_coverage = len(matched_req) / len(req_skills) if req_skills else 1.0
+            avg_req_quality = (req_evidence_sum / (len(matched_req) * 100)) if matched_req else 0.0
+            # Blend coverage with depth of evidence
+            required_score = (req_coverage * 0.7 + req_coverage * avg_req_quality * 0.3) * 100
             
-            # Check preferred skills
-            preferred_matches = sum(1 for skill in role_data['preferred_skills'] 
-                                   if skill in skills)
-            score += preferred_matches * 2
+            # 2. Preferred Skills Score (20%)
+            matched_pref = []
+            for skill in pref_skills:
+                if satisfies_skill(skill, candidate_skills):
+                    matched_pref.append(skill)
+            pref_coverage = len(matched_pref) / len(pref_skills) if pref_skills else 0.0
+            preferred_score = min(pref_coverage * 1.25, 1.0) * 100
             
-            # Add variation
-            score += random.randint(-3, 3)
+            # 3. Experience Relevance Score (20%)
+            exp_score = 0.0
+            if experience:
+                keyword_hits = sum(1 for kw in exp_keywords if kw in raw_text_lower)
+                exp_length_factor = min(len(experience) * 0.3, 1.0)
+                kw_factor = min(keyword_hits * 0.35, 1.0)
+                exp_score = (exp_length_factor * 0.5 + kw_factor * 0.5) * 100
+            
+            # 4. Projects Relevance Score (10%)
+            proj_score = 0.0
+            if projects:
+                role_relevant_projects = 0
+                for p in projects:
+                    p_techs = [t.lower() for t in p.get('technologies', [])]
+                    if any(s.lower() in p_techs for s in req_skills + pref_skills):
+                        role_relevant_projects += 1
+                proj_score = min((role_relevant_projects / max(len(projects), 1)) * 1.5, 1.0) * 100
+                
+            # 5. Education Relevance Score (5%)
+            edu_score = 40.0  # Base education consideration
+            for edu in education:
+                edu_str = f"{edu.get('degree', '')} {edu.get('field', '')}".lower()
+                if any(deg in edu_str for deg in relevant_degrees):
+                    edu_score = 100.0
+                    break
+                    
+            # Compute total weighted match score
+            total_match = (
+                (required_score * self.role_weights['required_skills']) +
+                (preferred_score * self.role_weights['preferred_skills']) +
+                (exp_score * self.role_weights['experience_relevance']) +
+                (proj_score * self.role_weights['projects_relevance']) +
+                (edu_score * self.role_weights['education_relevance'])
+            )
+            
+            final_match_pct = int(round(min(max(total_match, 0), 98)))
+            
+            missing_req = [s for s in req_skills if s not in matched_req]
+            missing_pref = [s for s in pref_skills if s not in matched_pref]
             
             role_matches.append({
                 'title': role_name,
-                'match': min(score, 95),
-                'summary': self._generate_role_summary(role_name, score)
+                'match': final_match_pct,
+                'summary': role_data.get('summary', f"Alignment based on verified skill profile and projects."),
+                'matched_required_skills': matched_req,
+                'matched_preferred_skills': matched_pref,
+                'missing_required_skills': missing_req,
+                'missing_preferred_skills': missing_pref,
+                'breakdown': {
+                    'required_skills_pct': int(round(required_score)),
+                    'preferred_skills_pct': int(round(preferred_score)),
+                    'experience_pct': int(round(exp_score)),
+                    'projects_pct': int(round(proj_score)),
+                    'education_pct': int(round(edu_score))
+                }
             })
-        
-        # Sort by match percentage and return top 3
-        role_matches.sort(key=lambda x: x['match'], reverse=True)
+            
+        # Sort descending by match percentage
+        role_matches.sort(key=lambda x: -x['match'])
         return role_matches[:3]
     
-    def _generate_role_summary(self, role_name: str, score: int) -> str:
-        """Generate a summary for role match"""
-        summaries = {
-            'Data Analyst': "Strong alignment with analytical strengths and project experience.",
-            'Product Analyst': "Great fit for cross-functional collaboration and insight generation.",
-            'Business Intelligence Analyst': "Solid foundation in reporting with opportunity to deepen leadership skills.",
-            'Data Scientist': "Good technical foundation with room to grow in advanced ML techniques.",
-            'Software Engineer': "Technical skills align well with modern development practices."
-        }
-        return summaries.get(role_name, "Good potential for this role based on your profile.")
+    def calculate_overall_fit_score(self, parsed_data: Dict[str, Any], top_role_match: Optional[int] = None) -> int:
+        """
+        Calculate deterministic overall Profile Strength score (0-100).
+        """
+        skills = parsed_data.get('skills', [])
+        experience = parsed_data.get('experience', [])
+        projects = parsed_data.get('projects', [])
+        education = parsed_data.get('education', [])
+        raw_text = parsed_data.get('raw_text', '').lower()
+        
+        # 1. Skills Evidence Component (35%)
+        # Evaluates both skill count and their evidence scores
+        if skills:
+            evidence_scores = [self.calculate_skill_evidence_score(s, parsed_data) for s in skills]
+            avg_evidence = sum(evidence_scores) / len(evidence_scores)
+            count_factor = min(len(skills) / 10.0, 1.0) # 10 skills = max breadth
+            skills_component = (avg_evidence * 0.6 + count_factor * 100 * 0.4)
+        else:
+            skills_component = 0.0
+            
+        # 2. Experience Quality Component (25%)
+        if experience:
+            exp_count_factor = min(len(experience) / 3.0, 1.0)
+            verb_hits = sum(1 for v in self.action_verbs if v in raw_text)
+            action_factor = min(verb_hits / 5.0, 1.0)
+            experience_component = (exp_count_factor * 60 + action_factor * 40)
+        else:
+            experience_component = 10.0 if raw_text else 0.0
+            
+        # 3. Projects Quality Component (20%)
+        if projects:
+            proj_count_factor = min(len(projects) / 3.0, 1.0)
+            tech_count = sum(len(p.get('technologies', [])) for p in projects)
+            tech_factor = min(tech_count / 6.0, 1.0)
+            projects_component = (proj_count_factor * 60 + tech_factor * 40)
+        else:
+            projects_component = 0.0
+            
+        # 4. Education Component (10%)
+        education_component = min(len(education) * 50, 100) if education else 30.0
+        
+        # 5. Role Alignment Component (10%)
+        role_component = float(top_role_match) if top_role_match is not None else 60.0
+        
+        overall = (
+            (skills_component * self.profile_weights['skills_evidence']) +
+            (experience_component * self.profile_weights['experience_evidence']) +
+            (projects_component * self.profile_weights['projects_evidence']) +
+            (education_component * self.profile_weights['education_credentials']) +
+            (role_component * self.profile_weights['best_role_alignment'])
+        )
+        
+        return int(round(min(max(overall, 0), 100)))
     
-    def generate_next_actions(self, parsed_data: Dict, role_matches: List[Dict]) -> List[Dict[str, str]]:
-        """Generate personalized next best actions"""
-        skills = [s.lower() for s in parsed_data.get('skills', [])]
-        
-        actions = []
-        
-        # Action 1: Based on missing skills
-        if 'storytelling' not in skills and 'communication' not in skills:
-            actions.append({
-                'title': 'Strengthen Storytelling',
-                'description': 'Create a portfolio case study that highlights impact-driven narratives.'
-            })
+    def calculate_role_alignment(self, fit_score: int) -> str:
+        """Determine deterministic role alignment tier."""
+        if fit_score >= ALIGNMENT_THRESHOLDS['high']:
+            return "High"
+        elif fit_score >= ALIGNMENT_THRESHOLDS['medium']:
+            return "Medium"
         else:
-            actions.append({
-                'title': 'Expand Technical Toolkit',
-                'description': 'Learn a new data visualization tool like Tableau or Power BI.'
-            })
-        
-        # Action 2: Leadership development
-        if 'leadership' not in skills:
-            actions.append({
-                'title': 'Grow Leadership Exposure',
-                'description': 'Volunteer to lead a cross-team initiative to build people-management skills.'
-            })
-        else:
-            actions.append({
-                'title': 'Mentor Others',
-                'description': 'Share your expertise by mentoring junior team members.'
-            })
-        
-        # Action 3: Technical depth
-        if 'sql' in skills:
-            actions.append({
-                'title': 'Deepen SQL Expertise',
-                'description': 'Complete an advanced SQL project focusing on query optimization.'
-            })
-        else:
-            actions.append({
-                'title': 'Build SQL Foundation',
-                'description': 'Complete a SQL fundamentals course and practice with real datasets.'
-            })
-        
-        return actions
-    
-    def generate_insights(self, parsed_data: Dict, fit_score: int) -> List[str]:
-        """Generate key insights about the resume"""
-        insights = []
-        
+            return "Low"
+            
+    def calculate_skill_momentum(self, parsed_data: Dict[str, Any]) -> int:
+        """
+        Calculate deterministic skill momentum (0-25) based on practical project applications and technical diversity.
+        """
         skills_count = len(parsed_data.get('skills', []))
+        projects_count = len(parsed_data.get('projects', []))
         experience_count = len(parsed_data.get('experience', []))
         
-        # Insight 1: Overall strength
+        # Bounded deterministic calculation
+        base = min(skills_count // 2, 10)
+        proj_pts = min(projects_count * 3, 9)
+        exp_pts = min(experience_count * 2, 6)
+        
+        total_momentum = base + proj_pts + exp_pts
+        return min(max(total_momentum, 2), 25)
+    
+    def generate_next_actions(self, parsed_data: Dict[str, Any], role_matches: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+        """
+        Generate targeted next actions directly mapped to the skill gaps of the top matched role.
+        """
+        actions = []
+        
+        if not role_matches:
+            return [
+                {
+                    'title': 'Add Technical Skills & Projects',
+                    'description': 'Include specific programming languages, frameworks, and practical projects to your resume.'
+                }
+            ]
+            
+        top_role = role_matches[0]
+        role_title = top_role['title']
+        missing_req = top_role.get('missing_required_skills', [])
+        missing_pref = top_role.get('missing_preferred_skills', [])
+        matched_req = top_role.get('matched_required_skills', [])
+        
+        # Action 1: Address #1 Missing Required Skill
+        if missing_req:
+            target_skill = missing_req[0]
+            actions.append({
+                'title': f'Master {target_skill}',
+                'description': f'Essential for {role_title}. Build a dedicated project or complete coursework to demonstrate hands-on competence.'
+            })
+        elif missing_pref:
+            target_skill = missing_pref[0]
+            actions.append({
+                'title': f'Learn {target_skill}',
+                'description': f'Expand your {role_title} competitiveness by adding {target_skill} to your technical toolkit.'
+            })
+        else:
+            actions.append({
+                'title': f'Deepen Advanced {matched_req[0] if matched_req else "Architecture"}',
+                'description': f'Solidify your profile for senior {role_title} opportunities through advanced system design and optimization.'
+            })
+            
+        # Action 2: Address Secondary Gap or Project Demonstration
+        if len(missing_req) > 1:
+            target_skill_2 = missing_req[1]
+            actions.append({
+                'title': f'Integrate {target_skill_2} into Portfolio',
+                'description': f'Create an end-to-end portfolio case study showcasing practical implementation of {target_skill_2}.'
+            })
+        elif missing_pref and len(actions) < 2:
+            target_pref = missing_pref[0] if not missing_req else missing_pref[0]
+            actions.append({
+                'title': f'Showcase {target_pref} Applications',
+                'description': f'Highlight real-world applications of {target_pref} in your projects and work history.'
+            })
+        else:
+            actions.append({
+                'title': 'Quantify Work Impact & Metrics',
+                'description': 'Enhance resume bullet points with measurable metrics (e.g., latency reduced, users served, efficiency gains).'
+            })
+            
+        # Action 3: Professional Breadth / Cloud / System Readiness
+        candidate_skills_lower = {s.lower() for s in parsed_data.get('skills', [])}
+        if not any(cloud in candidate_skills_lower for cloud in ['aws', 'azure', 'gcp', 'docker', 'ci/cd']):
+            actions.append({
+                'title': 'Adopt Modern Cloud & DevOps Workflows',
+                'description': 'Add containerization (Docker) and cloud deployments (AWS/GCP) to demonstrate production readiness.'
+            })
+        elif 'git' not in candidate_skills_lower:
+            actions.append({
+                'title': 'Emphasize Version Control & Collaboration',
+                'description': 'Highlight Git workflows, code reviews, and cross-functional team delivery.'
+            })
+        else:
+            actions.append({
+                'title': 'Publish Case Studies & GitHub Repositories',
+                'description': 'Ensure public repositories have detailed READMEs, architectural diagrams, and live demos.'
+            })
+            
+        return actions[:3]
+    
+    def generate_insights(self, parsed_data: Dict[str, Any], fit_score: int, top_role: Optional[Dict[str, Any]] = None) -> List[str]:
+        """
+        Generate deterministic, evidence-backed highlights and insights.
+        """
+        insights = []
+        skills_count = len(parsed_data.get('skills', []))
+        exp_count = len(parsed_data.get('experience', []))
+        proj_count = len(parsed_data.get('projects', []))
+        
+        # 1. Overall Profile Depth
         if fit_score >= 80:
-            insights.append("Resume showcases measurable impact across key projects.")
+            insights.append(f"Resume demonstrates strong multi-section evidence across {skills_count} verified technical competencies.")
+        elif fit_score >= 60:
+            insights.append(f"Solid foundational profile with {skills_count} verified skills and clear growth trajectory.")
         else:
-            insights.append("Resume demonstrates solid foundation with room for growth.")
-        
-        # Insight 2: Skill alignment
-        if skills_count >= 8:
-            insights.append("Skill profile strongly maps to analytical and strategy-focused roles.")
+            insights.append("Profile would benefit from more concrete project descriptions and explicit skill references.")
+            
+        # 2. Role Fit Insight
+        if top_role:
+            role_name = top_role['title']
+            match_pct = top_role['match']
+            matched_skills = top_role.get('matched_required_skills', [])
+            if matched_skills:
+                skills_str = ", ".join(matched_skills[:3])
+                insights.append(f"Highest alignment with {role_name} ({match_pct}% match) powered by verified proficiency in {skills_str}.")
+            else:
+                insights.append(f"Identified {role_name} as top potential trajectory ({match_pct}% match).")
+                
+        # 3. Practical Evidence Insight
+        if proj_count >= 2 and exp_count >= 1:
+            insights.append("Strong balance of practical project implementations alongside professional experience.")
+        elif proj_count >= 1:
+            insights.append("Practical portfolio projects provide tangible verification of applied technical skills.")
         else:
-            insights.append("Consider highlighting additional technical and soft skills.")
-        
-        # Insight 3: Development areas
-        if experience_count >= 3:
-            insights.append("Opportunities exist to amplify leadership and stakeholder storytelling.")
-        else:
-            insights.append("Building more project experience will strengthen your profile.")
-        
+            insights.append("Adding dedicated project repositories will significantly boost technical evidence scores.")
+            
         return insights

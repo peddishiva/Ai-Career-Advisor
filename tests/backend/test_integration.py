@@ -5,7 +5,6 @@ Tests if backend API matches frontend expectations
 
 import sys
 import requests
-import json
 from pathlib import Path
 
 # Ensure UTF-8 output on Windows

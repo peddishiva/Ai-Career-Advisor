@@ -201,9 +201,15 @@ export default function AnalysisPage() {
             <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
               Overall Fit Score: <span className="font-semibold">{overallInsights.fitScore}%</span>
             </div>
-            <span className="rounded-full bg-green-50 px-4 py-2 text-sm font-medium text-green-600 dark:bg-green-500/10 dark:text-green-300">
-              +{overallInsights.weekChange}% vs last review
-            </span>
+            {overallInsights.weekChange != null ? (
+              <span className="rounded-full bg-green-50 px-4 py-2 text-sm font-medium text-green-600 dark:bg-green-500/10 dark:text-green-300">
+                {overallInsights.weekChange >= 0 ? `+${overallInsights.weekChange}` : overallInsights.weekChange}% vs last review
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Verified Profile Analysis
+              </span>
+            )}
           </div>
         </header>
 

@@ -6,7 +6,6 @@ Tests all API keys and services used in the AI Career Advisor project
 
 import os
 import sys
-import json
 import requests
 from pathlib import Path
 from dotenv import load_dotenv

@@ -4,11 +4,8 @@ Complete Project Workflow Test
 Tests the entire data flow from resume upload to AI analysis and job recommendations
 """
 
-import os
 import sys
-import json
 import requests
-import time
 from pathlib import Path
 from dotenv import load_dotenv
 
