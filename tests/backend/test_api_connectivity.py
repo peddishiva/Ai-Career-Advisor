@@ -11,6 +11,9 @@ import requests
 from pathlib import Path
 from dotenv import load_dotenv
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 def print_status(message, status="INFO"):
     """Print colored status messages"""
     colors = {
