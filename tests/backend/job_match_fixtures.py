@@ -1,0 +1,278 @@
+"""Sanitized resume/JD fixtures for Phase 2B matching tests."""
+
+from services.job_description_parser import JobDescriptionParser
+from services.parser_service import ResumeParser
+
+
+SOFTWARE_ENGINEER_RESUME = """
+Sample Engineer
+sample.engineer@example.com
+
+TECHNICAL SKILLS
+Python, SQL, Git, REST APIs, FastAPI, Docker
+
+PROFESSIONAL EXPERIENCE
+Backend Developer - Clearpath Labs 2023 - 2025
+- Developed software development services and REST APIs using Python, FastAPI, SQL, and Git.
+- Built Docker deployment workflows for backend services.
+
+PROJECTS
+Inventory API Platform
+- Built REST APIs with Python, FastAPI, SQL, and Docker.
+
+EDUCATION
+B.Tech Computer Science and Engineering - Sample Institute
+
+CERTIFICATIONS
+AWS Certified Cloud Practitioner
+"""
+
+
+DATA_ANALYST_MISMATCH_RESUME = """
+Sample Analyst
+sample.analyst@example.com
+
+TECHNICAL SKILLS
+Tableau, Excel, Power BI, Data Analysis
+
+PROFESSIONAL EXPERIENCE
+Reporting Analyst - Insight Co 2022 - 2025
+- Created executive dashboards with Excel, Tableau, and Power BI.
+- Analyzed sales reports and presented business trends.
+
+PROJECTS
+Sales Reporting Dashboard
+- Built dashboard views using Tableau and Excel.
+
+EDUCATION
+Bachelor of Commerce - Sample College
+"""
+
+
+PREFERRED_TRAP_RESUME = """
+Sample Frontend Cloud Developer
+sample.frontend@example.com
+
+TECHNICAL SKILLS
+Python, React, AWS, Terraform
+
+PROFESSIONAL EXPERIENCE
+Frontend Developer - Cloud UI Co 2022 - 2025
+- Developed software development workflows for React dashboards on AWS.
+- Automated infrastructure changes with Terraform.
+
+PROJECTS
+Cloud Frontend Portal
+- Built a React dashboard deployed on AWS using Terraform automation.
+
+EDUCATION
+B.Tech Information Technology - Sample Institute
+"""
+
+
+PROJECT_ONLY_BACKEND_RESUME = """
+Sample Project Builder
+sample.builder@example.com
+
+TECHNICAL SKILLS
+Python, REST APIs, FastAPI, Docker
+
+PROJECTS
+Backend Order API
+- Built REST APIs using Python, FastAPI, and Docker.
+
+Realtime Backend Worker
+- Implemented backend services and API endpoints with Python.
+
+EDUCATION
+B.Tech Computer Science and Engineering - Sample Institute
+"""
+
+
+COMMERCE_EDUCATION_RESUME = """
+Sample Commerce Graduate
+sample.commerce@example.com
+
+TECHNICAL SKILLS
+Python, Git
+
+PROJECTS
+Budget Tracker
+- Built a Python script for personal finance reports.
+
+EDUCATION
+Bachelor of Commerce - Sample College
+"""
+
+
+ALIAS_RESUME = """
+Sample Platform Engineer
+sample.platform@example.com
+
+TECHNICAL SKILLS
+React, JavaScript, Postgres, K8s
+
+PROJECTS
+Platform Console
+- Built React and JavaScript UI backed by Postgres and deployed to K8s.
+
+EDUCATION
+B.Tech Computer Science - Sample Institute
+"""
+
+
+SKILLS_ONLY_AWS_RESUME = """
+Sample Cloud Learner
+sample.cloud@example.com
+
+TECHNICAL SKILLS
+AWS
+"""
+
+
+MISSING_DATE_EXPERIENCE_RESUME = """
+Sample Backend Engineer
+sample.backend@example.com
+
+TECHNICAL SKILLS
+Python, REST APIs
+
+PROFESSIONAL EXPERIENCE
+Backend Developer - Sample Services
+- Developed REST APIs using Python for backend services.
+"""
+
+
+SOFTWARE_ENGINEER_JD = """
+Software Engineer
+Company: Clearpath Labs
+Location: Remote
+Employment Type: Full-time
+
+Responsibilities
+- Build REST APIs in Python and FastAPI.
+- Collaborate with engineering teams using Git workflows.
+
+Requirements
+- 2+ years of software development experience.
+- Must have Python, SQL, Git, and REST APIs.
+- Bachelor's degree in Computer Science, Software Engineering, or related field.
+
+Preferred Skills
+- Docker and AWS are preferred.
+
+Certifications
+- AWS certification is preferred.
+"""
+
+
+PREFERRED_TRAP_JD = """
+Software Engineer
+Company: StackWorks
+Location: Remote
+Employment Type: Full-time
+
+Requirements
+- Must have Python, SQL, and Docker.
+- 2+ years of software development experience.
+- Bachelor's degree in Computer Science, Software Engineering, Information Technology, or related field.
+
+Responsibilities
+- Build React dashboards for cloud workflows.
+
+Preferred Skills
+- React, AWS, and Terraform are preferred.
+"""
+
+
+BACKEND_EXPERIENCE_JD = """
+Backend Engineer
+Company: API Foundry
+Location: Remote
+Employment Type: Full-time
+
+Responsibilities
+- Build REST APIs using Python.
+- Implement backend services.
+
+Requirements
+- 2+ years of professional backend experience.
+- Must have Python and REST APIs.
+"""
+
+
+EDUCATION_JD = """
+Software Engineer
+Company: DegreeCheck
+Location: Remote
+Employment Type: Full-time
+
+Requirements
+- Bachelor's degree in Computer Science, Software Engineering, or related field.
+"""
+
+
+CERTIFICATION_JD = """
+Cloud Engineer
+Company: CertCheck
+Location: Remote
+Employment Type: Full-time
+
+Preferred Skills
+- AWS is preferred.
+
+Certifications
+- AWS certification is preferred.
+"""
+
+
+ALIAS_JD = """
+Platform Engineer
+Company: AliasWorks
+Location: Remote
+Employment Type: Full-time
+
+Required Skills: React.js, Postgres, k8s
+"""
+
+
+RESPONSIBILITIES_ONLY_JD = """
+Backend Engineer
+Company: ResponsibilityOnly
+Location: Remote
+Employment Type: Contract
+
+Responsibilities
+- Build REST APIs using Python.
+- Implement backend services.
+"""
+
+
+REQUIRED_ONLY_JD = """
+Backend Developer
+Company: RequiredOnly
+Location: Remote
+Employment Type: Full-time
+
+Requirements
+- Must have Python and FastAPI.
+"""
+
+
+PREFERRED_ONLY_JD = """
+Frontend Developer
+Company: PreferredOnly
+Location: Remote
+Employment Type: Contract
+
+Preferred Skills
+- React and TypeScript are preferred.
+"""
+
+
+def parsed_resume(text: str) -> dict:
+    return ResumeParser().parse_text(text)
+
+
+def parsed_jd(text: str) -> dict:
+    return JobDescriptionParser().parse_text(text)

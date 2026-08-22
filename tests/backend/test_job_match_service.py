@@ -1,0 +1,217 @@
+"""
+Tests for deterministic Phase 2B resume-to-JD matching.
+"""
+
+import json
+import sys
+from pathlib import Path
+from datetime import date
+import unittest
+
+backend_path = Path(__file__).resolve().parent.parent.parent / "backend"
+tests_path = Path(__file__).resolve().parent
+sys.path.insert(0, str(backend_path))
+sys.path.insert(0, str(tests_path))
+
+from job_match_fixtures import (
+    ALIAS_JD,
+    ALIAS_RESUME,
+    BACKEND_EXPERIENCE_JD,
+    CERTIFICATION_JD,
+    COMMERCE_EDUCATION_RESUME,
+    DATA_ANALYST_MISMATCH_RESUME,
+    EDUCATION_JD,
+    MISSING_DATE_EXPERIENCE_RESUME,
+    PREFERRED_ONLY_JD,
+    PREFERRED_TRAP_JD,
+    PREFERRED_TRAP_RESUME,
+    PROJECT_ONLY_BACKEND_RESUME,
+    REQUIRED_ONLY_JD,
+    RESPONSIBILITIES_ONLY_JD,
+    SKILLS_ONLY_AWS_RESUME,
+    SOFTWARE_ENGINEER_JD,
+    SOFTWARE_ENGINEER_RESUME,
+    parsed_jd,
+    parsed_resume,
+)
+from services.job_match_service import JobMatchService
+
+
+class TestJobMatchService(unittest.TestCase):
+    """Validate deterministic, explainable resume-to-JD matching."""
+
+    def setUp(self):
+        self.service = JobMatchService(reference_year=2026)
+
+    def test_software_engineer_strong_match_is_high(self):
+        result = self.service.match(parsed_resume(SOFTWARE_ENGINEER_RESUME), parsed_jd(SOFTWARE_ENGINEER_JD))
+
+        self.assertGreaterEqual(result["score"], 75)
+        self.assertEqual(result["readiness"], "HIGH")
+        self.assertEqual(result["required_skills"]["missing"], [])
+        self.assertEqual(result["experience_alignment"]["status"], "met")
+        self.assertEqual(result["education_alignment"]["status"], "aligned")
+        self.assertTrue(any(item["type"] == "education" for item in result["resume_alignment"]))
+
+    def test_strong_mismatch_is_low_with_critical_gaps(self):
+        result = self.service.match(parsed_resume(DATA_ANALYST_MISMATCH_RESUME), parsed_jd(SOFTWARE_ENGINEER_JD))
+
+        self.assertLess(result["score"], 50)
+        self.assertEqual(result["readiness"], "LOW")
+        missing_required = [item["skill"] for item in result["required_skills"]["missing"]]
+        self.assertIn("Python", missing_required)
+        self.assertIn("REST APIs", missing_required)
+        self.assertTrue(any(gap["type"] == "required_skill" for gap in result["critical_gaps"]))
+
+    def test_required_skill_deficit_constrains_preferred_trap(self):
+        result = self.service.match(parsed_resume(PREFERRED_TRAP_RESUME), parsed_jd(PREFERRED_TRAP_JD))
+
+        missing_required = [item["skill"] for item in result["required_skills"]["missing"]]
+        self.assertIn("SQL", missing_required)
+        self.assertIn("Docker", missing_required)
+        self.assertGreaterEqual(len(result["preferred_skills"]["matched"]), 2)
+        self.assertTrue(result["score_constraint"]["applied"])
+        self.assertLess(result["score"], 70)
+
+    def test_project_evidence_does_not_satisfy_professional_experience_years(self):
+        result = self.service.match(parsed_resume(PROJECT_ONLY_BACKEND_RESUME), parsed_jd(BACKEND_EXPERIENCE_JD))
+
+        self.assertGreater(result["project_alignment"]["score"], 0)
+        self.assertIn(result["experience_alignment"]["status"], {"unmet", "insufficient_evidence"})
+        self.assertIsNone(result["experience_alignment"]["candidate_years"])
+        self.assertTrue(any(gap["type"] == "experience" for gap in result["critical_gaps"]))
+
+    def test_education_match_aligns_degree_and_related_field(self):
+        result = self.service.match(parsed_resume(SOFTWARE_ENGINEER_RESUME), parsed_jd(EDUCATION_JD))
+
+        self.assertEqual(result["education_alignment"]["status"], "aligned")
+        self.assertEqual(result["education_alignment"]["score"], 100)
+
+    def test_education_mismatch_is_not_aligned(self):
+        result = self.service.match(parsed_resume(COMMERCE_EDUCATION_RESUME), parsed_jd(EDUCATION_JD))
+
+        self.assertEqual(result["education_alignment"]["status"], "not_aligned")
+        self.assertEqual(result["education_alignment"]["score"], 0)
+        self.assertTrue(any(gap["type"] == "education" for gap in result["critical_gaps"]))
+
+    def test_preferred_certification_matches_without_critical_gap(self):
+        result = self.service.match(parsed_resume(SOFTWARE_ENGINEER_RESUME), parsed_jd(CERTIFICATION_JD))
+
+        self.assertEqual(result["certification_alignment"]["status"], "matched")
+        self.assertEqual(result["certification_alignment"]["score"], 100)
+        self.assertFalse(any(gap["type"] == "certification" for gap in result["critical_gaps"]))
+
+    def test_alias_skills_canonicalize_and_match(self):
+        result = self.service.match(parsed_resume(ALIAS_RESUME), parsed_jd(ALIAS_JD))
+
+        matched = [item["skill"] for item in result["required_skills"]["matched"]]
+        missing = [item["skill"] for item in result["required_skills"]["missing"]]
+
+        self.assertIn("JavaScript", matched)
+        self.assertIn("React", matched)
+        self.assertIn("PostgreSQL", matched)
+        self.assertIn("Kubernetes", matched)
+        self.assertEqual([], missing)
+
+    def test_skill_listed_only_is_partial(self):
+        result = self.service.match(
+            parsed_resume(SKILLS_ONLY_AWS_RESUME),
+            {
+                "required_skills": ["AWS"],
+                "preferred_skills": [],
+                "experience_requirements": [],
+                "education_requirements": [],
+                "certifications": [],
+                "responsibilities": [],
+            },
+        )
+
+        self.assertEqual(result["required_skills"]["partial"][0]["skill"], "AWS")
+        self.assertIn("no professional or project application", result["required_skills"]["partial"][0]["reason"])
+
+    def test_missing_experience_dates_are_insufficient_evidence(self):
+        result = self.service.match(parsed_resume(MISSING_DATE_EXPERIENCE_RESUME), parsed_jd(BACKEND_EXPERIENCE_JD))
+
+        self.assertEqual(result["experience_alignment"]["status"], "insufficient_evidence")
+        self.assertIsNone(result["experience_alignment"]["candidate_years"])
+
+    def test_reference_date_controls_present_experience_duration(self):
+        resume_data = {
+            "skills": ["Python"],
+            "section_evidence": {
+                "skills_section": ["Python"],
+                "experience_skills": ["Python"],
+                "project_skills": [],
+                "all_skill_frequencies": {"Python": 2},
+            },
+            "experience": [
+                {
+                    "title": "Backend Developer",
+                    "company": "Sample Services",
+                    "date": "2024 - Present",
+                    "description": "Developed backend services using Python.",
+                    "skills_applied": ["Python"],
+                }
+            ],
+            "education": [],
+            "projects": [],
+            "certifications": [],
+        }
+        jd_data = {
+            "required_skills": ["Python"],
+            "preferred_skills": [],
+            "experience_requirements": [
+                {
+                    "years": 2,
+                    "domain": "backend",
+                    "text": "2+ years of backend experience.",
+                    "requirement_type": "required",
+                }
+            ],
+            "education_requirements": [],
+            "certifications": [],
+            "responsibilities": [],
+        }
+
+        fixed_year_result = JobMatchService(reference_year=2026).match(resume_data, jd_data)
+        fixed_date_result = JobMatchService(reference_date=date(2025, 1, 15)).match(resume_data, jd_data)
+
+        self.assertEqual(date.today().year, JobMatchService().reference_year)
+        self.assertEqual(2.0, fixed_year_result["experience_alignment"]["candidate_years"])
+        self.assertEqual("met", fixed_year_result["experience_alignment"]["status"])
+        self.assertEqual(1.0, fixed_date_result["experience_alignment"]["candidate_years"])
+        self.assertEqual("unmet", fixed_date_result["experience_alignment"]["status"])
+
+    def test_responsibilities_only_jd_does_not_crash_or_fabricate_skills(self):
+        result = self.service.match(parsed_resume(PROJECT_ONLY_BACKEND_RESUME), parsed_jd(RESPONSIBILITIES_ONLY_JD))
+
+        self.assertEqual(result["required_skills"]["matched"], [])
+        self.assertGreater(result["responsibility_alignment"]["score"], 0)
+        self.assertEqual(result["score_constraint"]["applied"], False)
+
+    def test_required_only_and_preferred_only_jds_are_safe(self):
+        required_result = self.service.match(parsed_resume(SOFTWARE_ENGINEER_RESUME), parsed_jd(REQUIRED_ONLY_JD))
+        preferred_result = self.service.match(parsed_resume(PREFERRED_TRAP_RESUME), parsed_jd(PREFERRED_ONLY_JD))
+
+        self.assertIn("Python", [item["skill"] for item in required_result["required_skills"]["matched"]])
+        self.assertEqual(required_result["preferred_skills"]["missing"], [])
+        self.assertEqual(preferred_result["required_skills"]["missing"], [])
+        self.assertIn("React", [item["skill"] for item in preferred_result["preferred_skills"]["matched"]])
+
+    def test_empty_inputs_are_json_serializable_and_low(self):
+        result = self.service.match({}, {})
+
+        self.assertEqual(result["score"], 0)
+        self.assertEqual(result["readiness"], "LOW")
+        json.dumps(result)
+
+    def test_determinism_for_ten_runs(self):
+        resume_data = parsed_resume(SOFTWARE_ENGINEER_RESUME)
+        jd_data = parsed_jd(SOFTWARE_ENGINEER_JD)
+        results = [self.service.match(resume_data, jd_data) for _ in range(10)]
+
+        self.assertTrue(all(result == results[0] for result in results))
+
+
+if __name__ == "__main__":
+    unittest.main()
