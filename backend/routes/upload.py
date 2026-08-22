@@ -13,6 +13,7 @@ from datetime import datetime
 
 from services.parser_service import ResumeParser
 from services.analysis_service import AnalysisService
+from services.resume_validator import ResumeValidator
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
 # Initialize services
 parser = ResumeParser()
 analyzer = AnalysisService()
+resume_validator = ResumeValidator()
 
 # Store latest analysis in memory (in production, use database)
 latest_analysis = {}
@@ -58,8 +60,24 @@ async def upload_resume(file: UploadFile = File(...)):
         with file_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Parse resume
-        parsed_data = parser.parse_file(str(file_path))
+        # Extract text first, then validate before parsing/scoring.
+        extracted_text = parser.extract_text(str(file_path))
+        validation = resume_validator.validate_text(extracted_text)
+        if not validation['valid']:
+            if file_path.exists():
+                file_path.unlink()
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "success": False,
+                    "error": "resume_validation_failed",
+                    "validation": validation,
+                    "message": validation.get("message", "Please upload a valid resume.")
+                }
+            )
+        
+        # Parse resume only after the validation gate passes.
+        parsed_data = parser.parse_text(extracted_text)
         
         # Generate analysis
         analysis = analyzer.generate_analysis(parsed_data)

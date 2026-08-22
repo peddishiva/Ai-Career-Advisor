@@ -173,6 +173,41 @@ AWS Certified Cloud Practitioner
         self.assertEqual(data['education'], [])
         self.assertEqual(len(data['certifications']), 1)
 
+    def test_letter_spaced_pdf_section_headers_are_segmented(self):
+        """PDF-extracted letter-spaced headings should preserve parser section isolation."""
+        text = """
+Sample Candidate
+sample.candidate@example.com
++1 555-123-4567
+
+S U M M A R Y
+Computer science undergraduate focused on applied NLP and full-stack development.
+
+P R O F E S S I O N A L E X P E R I E N C E
+AI Developer Intern - Sample Employer 2025
+- Built an AI-powered auditing tool using Python and SQL.
+
+E D U C A T I O N
+B. Tech, Computer Science and Engineering (AI-ML) - Sample Institute 2023 - 2027
+
+A C A D E M I C P R O J E C T S
+Career Advisor
+- Built a resume analysis dashboard using React and FastAPI.
+
+S K I L L S
+Python, React, SQL, FastAPI
+
+C E R T I F I C A T I O N S & A C H I E V E M E N T S
+AWS Certified Cloud Practitioner
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertGreaterEqual(len(data['experience']), 1)
+        self.assertGreaterEqual(len(data['education']), 1)
+        self.assertGreaterEqual(len(data['projects']), 1)
+        self.assertGreaterEqual(len(data['certifications']), 1)
+        self.assertIn('Python', data['section_evidence']['skills_section'])
+
 
 if __name__ == '__main__':
     unittest.main()

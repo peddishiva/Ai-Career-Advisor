@@ -25,7 +25,11 @@ class AnalysisService:
         top_role_match = top_role['match'] if top_role else None
         
         # Calculate overall profile fit score
-        fit_score = self.scoring_engine.calculate_overall_fit_score(parsed_data, top_role_match)
+        fit_score = self.scoring_engine.calculate_overall_fit_score(
+            parsed_data,
+            top_role_match,
+            top_role['title'] if top_role else None
+        )
         
         # Calculate role alignment tier
         role_alignment = self.scoring_engine.calculate_role_alignment(fit_score)

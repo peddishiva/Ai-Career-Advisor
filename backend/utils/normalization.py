@@ -7,6 +7,40 @@ import re
 from typing import List, Set, Dict, Tuple
 from config.skill_aliases import ALIAS_TO_CANONICAL, SKILL_ALIASES, get_canonical_skill
 
+LETTER_SPACED_RESUME_HEADINGS = {
+    "SUMMARY": "SUMMARY",
+    "PROFESSIONALSUMMARY": "PROFESSIONAL SUMMARY",
+    "CAREERSUMMARY": "CAREER SUMMARY",
+    "WORKEXPERIENCE": "WORK EXPERIENCE",
+    "PROFESSIONALEXPERIENCE": "PROFESSIONAL EXPERIENCE",
+    "EMPLOYMENTHISTORY": "EMPLOYMENT HISTORY",
+    "EXPERIENCE": "EXPERIENCE",
+    "WORKHISTORY": "WORK HISTORY",
+    "SELECTEDWORK": "SELECTED WORK",
+    "EDUCATION": "EDUCATION",
+    "ACADEMICBACKGROUND": "ACADEMIC BACKGROUND",
+    "ACADEMICS": "ACADEMICS",
+    "QUALIFICATIONS": "QUALIFICATIONS",
+    "ACADEMICHISTORY": "ACADEMIC HISTORY",
+    "TECHNICALSKILLS": "TECHNICAL SKILLS",
+    "SKILLS&TOOLS": "SKILLS & TOOLS",
+    "CORECOMPETENCIES": "CORE COMPETENCIES",
+    "TECHNOLOGIES": "TECHNOLOGIES",
+    "TECHSTACK": "TECH STACK",
+    "SKILLS": "SKILLS",
+    "TECHNICALPROJECTS": "TECHNICAL PROJECTS",
+    "ACADEMICPROJECTS": "ACADEMIC PROJECTS",
+    "PERSONALPROJECTS": "PERSONAL PROJECTS",
+    "SELECTEDPROJECTS": "SELECTED PROJECTS",
+    "KEYPROJECTS": "KEY PROJECTS",
+    "PROJECTS": "PROJECTS",
+    "CERTIFICATIONS&ACHIEVEMENTS": "CERTIFICATIONS & ACHIEVEMENTS",
+    "CERTIFICATIONS": "CERTIFICATIONS",
+    "LICENSES&CERTIFICATIONS": "LICENSES & CERTIFICATIONS",
+    "CERTIFICATES": "CERTIFICATES",
+    "COURSES": "COURSES",
+}
+
 def normalize_text(text: str) -> str:
     """Normalize raw text for uniform string matching."""
     if not text:
@@ -16,6 +50,18 @@ def normalize_text(text: str) -> str:
     normalized = re.sub(r'[""\'\']', "'", normalized)
     normalized = re.sub(r'\s+', ' ', normalized)
     return normalized.strip()
+
+def normalize_resume_section_heading(line: str) -> str:
+    """Collapse PDF letter-spaced resume section headings for exact header matching."""
+    if not line:
+        return ""
+    stripped = line.strip()
+    heading_text = re.sub(r'^[#*_>`\-\s]*(?:\d+[\.)]\s*)?', '', stripped).strip()
+    compact = re.sub(r'\s+', '', heading_text).upper()
+    if compact in LETTER_SPACED_RESUME_HEADINGS:
+        prefix_match = re.match(r'^(\s*[#*_>`\-\s]*(?:\d+[\.)]\s*)?)', stripped)
+        return f"{prefix_match.group(1) if prefix_match else ''}{LETTER_SPACED_RESUME_HEADINGS[compact]}"
+    return stripped
 
 def extract_matched_skills(text: str) -> Dict[str, int]:
     """

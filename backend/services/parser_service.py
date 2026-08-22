@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 import pdfplumber
 from docx import Document
 
-from utils.normalization import normalize_text, extract_matched_skills, normalize_skill_list
+from utils.normalization import normalize_text, extract_matched_skills, normalize_skill_list, normalize_resume_section_heading
 from config.skill_aliases import get_canonical_skill
 
 
@@ -26,11 +26,16 @@ class ResumeParser:
             'experience': r'(?:work\s+experience|professional\s+experience|employment\s+history|experience|work\s+history|selected\s+work)',
             'projects': r'(?:technical\s+projects|academic\s+projects|personal\s+projects|selected\s+projects|projects|key\s+projects)',
             'education': r'(?:education|academic\s+background|academics|qualifications|academic\s+history)',
-            'certifications': r'(?:certifications|licenses\s*&?\s*certifications|certificates|courses)'
+            'certifications': r'(?:certifications\s*&?\s*achievements|certifications|licenses\s*&?\s*certifications|certificates|courses|achievements)'
         }
         
     def parse_file(self, file_path: str) -> Dict[str, Any]:
         """Parse resume file and extract rich structured information."""
+        text = self.extract_text(file_path)
+        return self.parse_text(text)
+    
+    def extract_text(self, file_path: str) -> str:
+        """Extract text from a supported resume file without parsing it."""
         file_path = Path(file_path)
         
         if not file_path.exists():
@@ -42,7 +47,11 @@ class ResumeParser:
             text = self._extract_docx_text(file_path)
         else:
             raise ValueError(f"Unsupported file format: {file_path.suffix}")
+            
+        return text
         
+    def parse_text(self, text: str) -> Dict[str, Any]:
+        """Parse already-extracted resume text into structured information."""
         # Extract structured information
         parsed_data = self._extract_information(text)
         parsed_data['raw_text'] = text
@@ -98,8 +107,9 @@ class ResumeParser:
             # Check if this line is a section header
             matched_header = None
             inline_content = ""
+            normalized_header = normalize_resume_section_heading(stripped)
             for sec_name, regex in header_patterns:
-                match = regex.match(stripped)
+                match = regex.match(normalized_header)
                 if match:
                     matched_header = sec_name
                     inline_content = (match.group(2) or "").strip(" *#_`>")
@@ -236,8 +246,8 @@ class ResumeParser:
             return []
         
         degree_patterns = [
-            r'(?:bachelor(?:\'s)?|b\.?s\.?|b\.?a\.?|b\.?tech|b\.?e\.?|undergraduate)\s*(?:of|in)?\s*([^\n,;]+)?',
-            r'(?:master(?:\'s)?|m\.?s\.?|m\.?a\.?|m\.?tech|m\.?b\.?a\.?|graduate)\s*(?:of|in)?\s*([^\n,;]+)?',
+            r'(?:bachelor(?:\'s)?|b\.?\s?s\.?|b\.?\s?a\.?|b\.?\s?tech|b\.?\s?e\.?|undergraduate)\s*(?:of|in)?\s*([^\n,;]+)?',
+            r'(?:master(?:\'s)?|m\.?\s?s\.?|m\.?\s?a\.?|m\.?\s?tech|m\.?\s?b\.?\s?a\.?|graduate)\s*(?:of|in)?\s*([^\n,;]+)?',
             r'(?:ph\.?d\.?|doctorate|doctor\s+of\s+philosophy)\s*(?:in)?\s*([^\n,;]+)?',
             r'(?:associate(?:\'s)?\s+degree)\s*(?:in)?\s*([^\n,;]+)?'
         ]

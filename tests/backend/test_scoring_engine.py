@@ -341,6 +341,40 @@ class TestDeterministicScoringEngine(unittest.TestCase):
         self.assertEqual(relevant_role['breakdown']['education_pct'], 100)
         self.assertEqual(unrelated_role['breakdown']['education_pct'], 0)
         self.assertEqual(missing_role['breakdown']['education_pct'], 0)
+        
+    def test_10_overall_education_component_uses_strongest_role_relevance(self):
+        """Overall education contribution should not reward unrelated education entries."""
+        base_profile = {
+            'name': 'Overall Education Candidate',
+            'skills': ['Python', 'SQL', 'Excel', 'Data Analysis'],
+            'raw_text': '',
+            'sections': {
+                'skills_text': 'Python, SQL, Excel, Data Analysis',
+                'experience_text': '',
+                'projects_text': '',
+                'education_text': '',
+                'certifications_text': ''
+            },
+            'section_evidence': {
+                'skills_section': ['Python', 'SQL', 'Excel', 'Data Analysis'],
+                'experience_skills': [],
+                'project_skills': [],
+                'all_skill_frequencies': {'Python': 1, 'SQL': 1, 'Excel': 1, 'Data Analysis': 1}
+            },
+            'experience': [],
+            'projects': []
+        }
+        
+        relevant = {**base_profile, 'education': [{'degree': 'Bachelor of Science', 'field': 'Data Analytics'}]}
+        unrelated = {**base_profile, 'education': [{'degree': 'Bachelor of Arts', 'field': 'English Literature'}]}
+        missing = {**base_profile, 'education': []}
+        
+        relevant_score = self.scoring_engine.calculate_overall_fit_score(relevant, 0, 'Data Analyst')
+        unrelated_score = self.scoring_engine.calculate_overall_fit_score(unrelated, 0, 'Data Analyst')
+        missing_score = self.scoring_engine.calculate_overall_fit_score(missing, 0, 'Data Analyst')
+        
+        self.assertGreater(relevant_score, unrelated_score)
+        self.assertEqual(unrelated_score, missing_score)
 
 
 if __name__ == '__main__':

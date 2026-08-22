@@ -49,6 +49,18 @@ class ScoringEngine:
             return "\n".join(cert.get('name', '') for cert in parsed_data.get('certifications', []))
         return ""
         
+    def _calculate_education_relevance(self, education: List[Dict[str, Any]], role_data: Dict[str, Any]) -> float:
+        """Calculate education relevance for a role from degree/field evidence only."""
+        if not education:
+            return 0.0
+            
+        relevant_degrees = role_data.get('relevant_degrees', [])
+        for edu in education:
+            edu_str = f"{edu.get('degree', '')} {edu.get('field', '')}".lower()
+            if any(deg in edu_str for deg in relevant_degrees):
+                return 100.0
+        return 0.0
+        
     def calculate_skill_evidence_score(self, skill_name: str, parsed_data: Dict[str, Any]) -> int:
         """
         Calculate an individual skill's evidence score (0-100) based on contextual occurrence across resume sections.
@@ -195,12 +207,7 @@ class ScoringEngine:
                 proj_score = min((role_relevant_projects / max(len(projects), 1)) * 1.5, 1.0) * 100
                 
             # 5. Education Relevance Score (5%)
-            edu_score = 0.0
-            for edu in education:
-                edu_str = f"{edu.get('degree', '')} {edu.get('field', '')}".lower()
-                if any(deg in edu_str for deg in relevant_degrees):
-                    edu_score = 100.0
-                    break
+            edu_score = self._calculate_education_relevance(education, role_data)
                     
             # Compute total weighted match score
             total_match = (
@@ -237,7 +244,12 @@ class ScoringEngine:
         role_matches.sort(key=lambda x: -x['match'])
         return role_matches[:3]
     
-    def calculate_overall_fit_score(self, parsed_data: Dict[str, Any], top_role_match: Optional[int] = None) -> int:
+    def calculate_overall_fit_score(
+        self,
+        parsed_data: Dict[str, Any],
+        top_role_match: Optional[int] = None,
+        top_role_title: Optional[str] = None
+    ) -> int:
         """
         Calculate deterministic overall Profile Strength score (0-100).
         """
@@ -276,7 +288,17 @@ class ScoringEngine:
             projects_component = 0.0
             
         # 4. Education Component (10%)
-        education_component = min(len(education) * 50, 100) if education else 0.0
+        education_component = 0.0
+        if education:
+            strongest_role_title = top_role_title
+            if strongest_role_title is None:
+                role_matches = self.calculate_role_matches(parsed_data)
+                strongest_role_title = role_matches[0]['title'] if role_matches else None
+            if strongest_role_title in self.role_definitions:
+                education_component = self._calculate_education_relevance(
+                    education,
+                    self.role_definitions[strongest_role_title]
+                )
         
         # 5. Role Alignment Component (10%)
         role_component = float(top_role_match) if top_role_match is not None else 0.0

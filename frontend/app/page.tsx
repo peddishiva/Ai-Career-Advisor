@@ -85,7 +85,11 @@ export default function Home() {
       console.log('Response data:', data);
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Upload failed');
+        const validationMessage = data.validation?.message || data.message;
+        const detailMessage = typeof data.detail === 'string' ? data.detail : data.detail?.message;
+        const error = new Error(validationMessage || detailMessage || 'Upload failed');
+        (error as Error & { validationError?: boolean }).validationError = data.error === 'resume_validation_failed';
+        throw error;
       }
       
       toast({
@@ -117,6 +121,12 @@ export default function Home() {
         toast({
           title: 'Backend not running',
           description: 'Please start the Python backend server first. Run: cd backend && python main.py',
+          variant: 'destructive',
+        });
+      } else if ((error as Error & { validationError?: boolean }).validationError) {
+        toast({
+          title: "This file doesn't appear to be a resume.",
+          description: error instanceof Error ? error.message : 'Please upload a resume containing your education, experience, projects, skills, or certifications.',
           variant: 'destructive',
         });
       } else {
