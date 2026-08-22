@@ -39,7 +39,7 @@ def extract_matched_skills(text: str) -> Dict[str, int]:
             # Construct boundary-safe regex pattern
             escaped_term = re.escape(term)
             # Match term when flanked by non-alphanumeric or start/end
-            pattern = rf'(?:^|(?<=[^a-zA-Z0-9_#+.-])){escaped_term}(?=[^a-zA-Z0-9_#+.-]|$)'
+            pattern = rf'(?:^|(?<=[^a-zA-Z0-9_#+-])){escaped_term}(?=[^a-zA-Z0-9_#+-]|$)'
             matches = len(re.findall(pattern, text_lower))
             count += matches
         

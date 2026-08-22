@@ -30,8 +30,8 @@ class AnalysisService:
         # Calculate role alignment tier
         role_alignment = self.scoring_engine.calculate_role_alignment(fit_score)
         
-        # Calculate skill momentum
-        skill_momentum = self.scoring_engine.calculate_skill_momentum(parsed_data)
+        # Calculate current skill coverage from resume evidence.
+        skill_coverage = self.scoring_engine.calculate_skill_coverage(parsed_data)
         
         # Generate targeted next actions driven by top role gaps
         next_actions = self.scoring_engine.generate_next_actions(parsed_data, role_matches)
@@ -53,7 +53,9 @@ class AnalysisService:
             },
             'metrics': {
                 'role_alignment': role_alignment,
-                'skill_momentum': skill_momentum,
+                'skill_coverage': skill_coverage,
+                # Deprecated compatibility alias: this is coverage, not historical growth.
+                'skill_momentum': skill_coverage,
                 'readiness_actions_count': len(next_actions)
             },
             'skill_strengths': skill_strengths,

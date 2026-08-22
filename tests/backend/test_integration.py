@@ -5,6 +5,7 @@ Tests if backend API matches frontend expectations
 
 import sys
 import requests
+import json
 from pathlib import Path
 
 # Ensure UTF-8 output on Windows
@@ -97,6 +98,7 @@ def test_response_format():
             },
             "metrics": {
                 "role_alignment": str,
+                "skill_coverage": int,
                 "skill_momentum": int,
                 "readiness_actions_count": int
             },

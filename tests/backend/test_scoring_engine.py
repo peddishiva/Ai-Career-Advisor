@@ -171,6 +171,176 @@ class TestDeterministicScoringEngine(unittest.TestCase):
         
         self.assertFalse(hasattr(sl, 'random'), "scoring_logic should NOT import or use random")
         self.assertFalse(hasattr(asrv, 'random'), "analysis_service should NOT import or use random")
+        
+    def test_6_skill_coverage_is_deterministic(self):
+        """Verify Skill Coverage is a stable current-evidence metric."""
+        results = [self.analysis_service.generate_analysis(self.data_analyst_profile) for _ in range(5)]
+        first = results[0]
+        
+        for res in results[1:]:
+            self.assertEqual(res['metrics']['skill_coverage'], first['metrics']['skill_coverage'])
+            self.assertEqual(res['metrics']['skill_momentum'], first['metrics']['skill_coverage'])
+            self.assertEqual(res['skill_strengths'], first['skill_strengths'])
+            self.assertEqual(res['role_matches'], first['role_matches'])
+            self.assertEqual(res['next_actions'], first['next_actions'])
+            
+    def test_7_project_role_keywords_do_not_increase_experience_relevance(self):
+        """Role keywords in Projects must not count as Experience relevance."""
+        profile = {
+            'name': 'Project Only Candidate',
+            'skills': ['Python', 'SQL', 'Excel', 'Data Analysis'],
+            'raw_text': (
+                "SKILLS\nPython, SQL, Excel, Data Analysis\n\n"
+                "PROJECTS\nBuilt a Data Analyst dashboard using Python and SQL."
+            ),
+            'sections': {
+                'skills_text': 'Python, SQL, Excel, Data Analysis',
+                'experience_text': '',
+                'projects_text': 'Built a Data Analyst dashboard using Python and SQL.',
+                'education_text': '',
+                'certifications_text': ''
+            },
+            'section_evidence': {
+                'skills_section': ['Python', 'SQL', 'Excel', 'Data Analysis'],
+                'experience_skills': [],
+                'project_skills': ['Python', 'SQL', 'Data Analysis'],
+                'all_skill_frequencies': {'Python': 2, 'SQL': 2, 'Excel': 1, 'Data Analysis': 2}
+            },
+            'experience': [],
+            'projects': [{'description': 'Built a Data Analyst dashboard using Python and SQL.', 'technologies': ['Python', 'SQL', 'Data Analysis']}],
+            'education': []
+        }
+        
+        role_matches = self.scoring_engine.calculate_role_matches(profile)
+        data_analyst = next(role for role in role_matches if role['title'] == 'Data Analyst')
+        self.assertEqual(data_analyst['breakdown']['experience_pct'], 0)
+        
+    def test_8_applied_skill_evidence_beats_interest_only(self):
+        """Applied evidence should score higher than interest-only mentions."""
+        docker_interest = {
+            'skills': ['Docker'],
+            'raw_text': 'Interested in learning Docker.',
+            'sections': {
+                'skills_text': '',
+                'experience_text': '',
+                'projects_text': '',
+                'education_text': '',
+                'certifications_text': ''
+            },
+            'section_evidence': {
+                'skills_section': [],
+                'experience_skills': [],
+                'project_skills': [],
+                'all_skill_frequencies': {'Docker': 1}
+            },
+            'experience': [],
+            'projects': [],
+            'education': []
+        }
+        docker_applied = {
+            'skills': ['Docker'],
+            'raw_text': 'PROJECTS\nDeployed production services using Docker.',
+            'sections': {
+                'skills_text': '',
+                'experience_text': '',
+                'projects_text': 'Deployed production services using Docker.',
+                'education_text': '',
+                'certifications_text': ''
+            },
+            'section_evidence': {
+                'skills_section': [],
+                'experience_skills': [],
+                'project_skills': ['Docker'],
+                'all_skill_frequencies': {'Docker': 1}
+            },
+            'experience': [],
+            'projects': [{'description': 'Deployed production services using Docker.', 'technologies': ['Docker']}],
+            'education': []
+        }
+        ml_interest = {
+            'skills': ['Machine Learning'],
+            'raw_text': 'Interested in Machine Learning.',
+            'sections': {
+                'skills_text': '',
+                'experience_text': '',
+                'projects_text': '',
+                'education_text': '',
+                'certifications_text': ''
+            },
+            'section_evidence': {
+                'skills_section': [],
+                'experience_skills': [],
+                'project_skills': [],
+                'all_skill_frequencies': {'Machine Learning': 1}
+            },
+            'experience': [],
+            'projects': [],
+            'education': []
+        }
+        ml_applied = {
+            'skills': ['Machine Learning'],
+            'raw_text': 'PROJECTS\nDeveloped and evaluated a Machine Learning model.',
+            'sections': {
+                'skills_text': '',
+                'experience_text': '',
+                'projects_text': 'Developed and evaluated a Machine Learning model.',
+                'education_text': '',
+                'certifications_text': ''
+            },
+            'section_evidence': {
+                'skills_section': [],
+                'experience_skills': [],
+                'project_skills': ['Machine Learning'],
+                'all_skill_frequencies': {'Machine Learning': 1}
+            },
+            'experience': [],
+            'projects': [{'description': 'Developed and evaluated a Machine Learning model.', 'technologies': ['Machine Learning']}],
+            'education': []
+        }
+        
+        self.assertGreater(
+            self.scoring_engine.calculate_skill_evidence_score('Docker', docker_applied),
+            self.scoring_engine.calculate_skill_evidence_score('Docker', docker_interest)
+        )
+        self.assertGreater(
+            self.scoring_engine.calculate_skill_evidence_score('Machine Learning', ml_applied),
+            self.scoring_engine.calculate_skill_evidence_score('Machine Learning', ml_interest)
+        )
+        
+    def test_9_education_relevance_is_evidence_based(self):
+        """Relevant education scores fully; unrelated and missing education score zero."""
+        base_profile = {
+            'name': 'Education Candidate',
+            'skills': ['Python', 'SQL', 'Excel', 'Data Analysis'],
+            'raw_text': '',
+            'sections': {
+                'skills_text': 'Python, SQL, Excel, Data Analysis',
+                'experience_text': '',
+                'projects_text': '',
+                'education_text': '',
+                'certifications_text': ''
+            },
+            'section_evidence': {
+                'skills_section': ['Python', 'SQL', 'Excel', 'Data Analysis'],
+                'experience_skills': [],
+                'project_skills': [],
+                'all_skill_frequencies': {'Python': 1, 'SQL': 1, 'Excel': 1, 'Data Analysis': 1}
+            },
+            'experience': [],
+            'projects': []
+        }
+        
+        relevant = {**base_profile, 'education': [{'degree': 'Bachelor of Science', 'field': 'Data Analytics'}]}
+        unrelated = {**base_profile, 'education': [{'degree': 'Bachelor of Arts', 'field': 'English Literature'}]}
+        missing = {**base_profile, 'education': []}
+        
+        relevant_role = next(role for role in self.scoring_engine.calculate_role_matches(relevant) if role['title'] == 'Data Analyst')
+        unrelated_role = next(role for role in self.scoring_engine.calculate_role_matches(unrelated) if role['title'] == 'Data Analyst')
+        missing_role = next(role for role in self.scoring_engine.calculate_role_matches(missing) if role['title'] == 'Data Analyst')
+        
+        self.assertEqual(relevant_role['breakdown']['education_pct'], 100)
+        self.assertEqual(unrelated_role['breakdown']['education_pct'], 0)
+        self.assertEqual(missing_role['breakdown']['education_pct'], 0)
 
 
 if __name__ == '__main__':

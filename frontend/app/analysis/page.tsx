@@ -124,10 +124,13 @@ export default function AnalysisPage() {
     }
     return {
       role_alignment: 'High',
-      skill_momentum: 12,
+      skill_coverage: 62,
+      skill_momentum: 62,
       readiness_actions_count: 3,
     };
   }, [analysisData]);
+  
+  const skillCoverage = metrics.skill_coverage ?? metrics.skill_momentum ?? 0;
 
   if (loading) {
     return (
@@ -232,14 +235,14 @@ export default function AnalysisPage() {
           <Card className="dark:bg-gray-900/60 dark:border-gray-800">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-500 dark:text-gray-300">
-                Skill Momentum
+                Skill Coverage
               </CardTitle>
               <TrendingUp className="h-4 w-4 text-emerald-500" />
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">+{metrics.skill_momentum}%</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{skillCoverage}%</p>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Growth in technical proficiency quarter over quarter.
+                Current resume evidence across skills, projects, and experience.
               </p>
             </CardContent>
           </Card>
@@ -292,7 +295,7 @@ export default function AnalysisPage() {
             <CardHeader>
               <CardTitle className="text-gray-900 dark:text-white">Skill Strengths</CardTitle>
               <CardDescription className="dark:text-gray-400">
-                Relative skill proficiency based on profile assessment.
+                Skill evidence scores based on resume sections.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

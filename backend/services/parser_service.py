@@ -22,10 +22,10 @@ class ResumeParser:
         
         # Section Header Patterns
         self.section_headers = {
-            'skills': r'(?:technical\s+skills|skills\s*&?\s*tools|core\s+competencies|technologies|skills)',
-            'experience': r'(?:work\s+experience|professional\s+experience|employment\s+history|experience|work\s+history)',
-            'projects': r'(?:technical\s+projects|academic\s+projects|personal\s+projects|projects|key\s+projects)',
-            'education': r'(?:education|academic\s+background|qualifications|academic\s+history)',
+            'skills': r'(?:technical\s+skills|skills\s*&?\s*tools|core\s+competencies|technologies|tech\s+stack|skills)',
+            'experience': r'(?:work\s+experience|professional\s+experience|employment\s+history|experience|work\s+history|selected\s+work)',
+            'projects': r'(?:technical\s+projects|academic\s+projects|personal\s+projects|selected\s+projects|projects|key\s+projects)',
+            'education': r'(?:education|academic\s+background|academics|qualifications|academic\s+history)',
             'certifications': r'(?:certifications|licenses\s*&?\s*certifications|certificates|courses)'
         }
         
@@ -80,10 +80,13 @@ class ResumeParser:
         
         current_section = 'header'
         
-        # Compile patterns for section recognition
+        # Compile patterns for section recognition.
         header_patterns = []
         for sec_name, pattern in self.section_headers.items():
-            regex = re.compile(rf'^\s*(?:[#*-]\s*)?{pattern}\s*[:\-]?\s*$', re.IGNORECASE)
+            regex = re.compile(
+                rf'^\s*[#*_>`\-\s]*(?:\d+[\.)]\s*)?({pattern})\s*(?:[:\-]\s*(.*))?$',
+                re.IGNORECASE
+            )
             header_patterns.append((sec_name, regex))
             
         for line in lines:
@@ -94,13 +97,18 @@ class ResumeParser:
                 
             # Check if this line is a section header
             matched_header = None
+            inline_content = ""
             for sec_name, regex in header_patterns:
-                if regex.match(stripped):
+                match = regex.match(stripped)
+                if match:
                     matched_header = sec_name
+                    inline_content = (match.group(2) or "").strip(" *#_`>")
                     break
                     
             if matched_header:
                 current_section = matched_header
+                if inline_content:
+                    sections[current_section].append(inline_content)
                 continue
                 
             sections[current_section].append(stripped)
@@ -130,10 +138,10 @@ class ResumeParser:
         all_skills_list = sorted(list(skills_in_all.keys()))
         
         # Extract detailed subsections
-        experience = self._extract_experience(sections.get('experience', ''), text)
-        education = self._extract_education(sections.get('education', ''), text)
-        projects = self._extract_projects(sections.get('projects', ''), text)
-        certifications = self._extract_certifications(sections.get('certifications', ''), text)
+        experience = self._extract_experience(sections.get('experience', ''))
+        education = self._extract_education(sections.get('education', ''))
+        projects = self._extract_projects(sections.get('projects', ''))
+        certifications = self._extract_certifications(sections.get('certifications', ''))
         
         # Build Section Evidence Map for Scoring Engine
         section_evidence = {
@@ -180,10 +188,10 @@ class ResumeParser:
                     return clean_line
         return "Candidate"
     
-    def _extract_experience(self, exp_text: str, full_text: str) -> List[Dict[str, Any]]:
+    def _extract_experience(self, exp_text: str) -> List[Dict[str, Any]]:
         """Extract structured work experience entries."""
         experience = []
-        target_text = exp_text if len(exp_text.strip()) > 30 else full_text
+        target_text = exp_text.strip()
         
         if not target_text:
             return []
@@ -193,6 +201,7 @@ class ResumeParser:
         
         if len(blocks) <= 1 and '\n' in target_text:
             # Fallback: split on common role header lines
+            blocks = []
             lines = target_text.split('\n')
             current_block = []
             role_header_re = re.compile(r'^(?:senior|junior|lead|principal|staff|full\s*stack|software|backend|frontend|data|ml|ai|devops|cloud|product|engineer|developer|analyst|manager|consultant)\b', re.IGNORECASE)
@@ -218,10 +227,13 @@ class ResumeParser:
             
         return experience[:6]
     
-    def _extract_education(self, edu_text: str, full_text: str) -> List[Dict[str, Any]]:
+    def _extract_education(self, edu_text: str) -> List[Dict[str, Any]]:
         """Extract education credentials."""
         education = []
-        target_text = edu_text if len(edu_text.strip()) > 15 else full_text
+        target_text = edu_text.strip()
+        
+        if not target_text:
+            return []
         
         degree_patterns = [
             r'(?:bachelor(?:\'s)?|b\.?s\.?|b\.?a\.?|b\.?tech|b\.?e\.?|undergraduate)\s*(?:of|in)?\s*([^\n,;]+)?',
@@ -242,10 +254,10 @@ class ResumeParser:
                 
         return education[:3]
     
-    def _extract_projects(self, proj_text: str, full_text: str) -> List[Dict[str, Any]]:
+    def _extract_projects(self, proj_text: str) -> List[Dict[str, Any]]:
         """Extract project entries with detected technologies."""
         projects = []
-        target_text = proj_text if len(proj_text.strip()) > 20 else full_text
+        target_text = proj_text.strip()
         
         if not target_text:
             return []
@@ -263,10 +275,13 @@ class ResumeParser:
             
         return projects[:6]
     
-    def _extract_certifications(self, cert_text: str, full_text: str) -> List[Dict[str, Any]]:
+    def _extract_certifications(self, cert_text: str) -> List[Dict[str, Any]]:
         """Extract professional certifications."""
         certifications = []
-        target_text = cert_text if len(cert_text.strip()) > 15 else full_text
+        target_text = cert_text.strip()
+        
+        if not target_text:
+            return []
         
         cert_keywords = [
             "aws certified", "azure certified", "gcp certified", "pmp",

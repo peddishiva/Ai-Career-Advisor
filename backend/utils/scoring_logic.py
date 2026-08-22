@@ -28,6 +28,27 @@ class ScoringEngine:
         self.evidence_points = SKILL_EVIDENCE_POINTS
         self.action_verbs = IMPACT_ACTION_VERBS
         
+    def _get_section_text(self, parsed_data: Dict[str, Any], section_name: str) -> str:
+        """Return text for a specific evidence section, falling back only to structured entries from that section."""
+        sections = parsed_data.get('sections', {})
+        section_key = f'{section_name}_text'
+        section_text = sections.get(section_key, '')
+        if section_text:
+            return section_text
+            
+        if section_name == 'experience':
+            return "\n".join(entry.get('description', '') for entry in parsed_data.get('experience', []))
+        if section_name == 'projects':
+            return "\n".join(project.get('description', '') for project in parsed_data.get('projects', []))
+        if section_name == 'education':
+            return "\n".join(
+                f"{edu.get('degree', '')} {edu.get('field', '')}"
+                for edu in parsed_data.get('education', [])
+            )
+        if section_name == 'certifications':
+            return "\n".join(cert.get('name', '') for cert in parsed_data.get('certifications', []))
+        return ""
+        
     def calculate_skill_evidence_score(self, skill_name: str, parsed_data: Dict[str, Any]) -> int:
         """
         Calculate an individual skill's evidence score (0-100) based on contextual occurrence across resume sections.
@@ -59,14 +80,16 @@ class ScoringEngine:
         if proj_occurrences >= 2:
             score += self.evidence_points['in_multiple_projects']
             
-        # 4. Contextual Impact / Action Verbs nearby
-        raw_text = parsed_data.get('raw_text', '').lower()
-        # Check if the skill co-occurs in sentences containing impact verbs
+        # 4. Contextual Impact / Action Verbs nearby in evidence-bearing sections
+        applied_text = "\n".join([
+            self._get_section_text(parsed_data, 'experience'),
+            self._get_section_text(parsed_data, 'projects')
+        ]).lower()
         has_impact = False
         for verb in self.action_verbs:
-            if verb in raw_text and skill_lower in raw_text:
+            if verb in applied_text and skill_lower in applied_text:
                 # Check rough proximity (within ~150 characters)
-                for sentence in re.split(r'[.\n•]', raw_text):
+                for sentence in re.split(r'[.\n•]', applied_text):
                     if verb in sentence and skill_lower in sentence:
                         has_impact = True
                         break
@@ -81,9 +104,9 @@ class ScoringEngine:
         if total_freq > 3:
             score += min((total_freq - 3) * 3, 10)
             
-        # Baseline minimum for any verified extracted skill
+        # Conservative minimum for a detected skill outside stronger evidence sections
         if score == 0 and skill_name in parsed_data.get('skills', []):
-            score = 30
+            score = self.evidence_points['mentioned_elsewhere']
             
         return min(max(score, 0), self.evidence_points['max_score'])
     
@@ -122,7 +145,7 @@ class ScoringEngine:
         experience = parsed_data.get('experience', [])
         projects = parsed_data.get('projects', [])
         education = parsed_data.get('education', [])
-        raw_text_lower = parsed_data.get('raw_text', '').lower()
+        experience_text_lower = self._get_section_text(parsed_data, 'experience').lower()
         
         role_matches = []
         
@@ -156,8 +179,8 @@ class ScoringEngine:
             # 3. Experience Relevance Score (20%)
             exp_score = 0.0
             if experience:
-                keyword_hits = sum(1 for kw in exp_keywords if kw in raw_text_lower)
-                exp_length_factor = min(len(experience) * 0.3, 1.0)
+                keyword_hits = sum(1 for kw in exp_keywords if kw in experience_text_lower)
+                exp_length_factor = min(len(experience) * 0.4, 1.0)
                 kw_factor = min(keyword_hits * 0.35, 1.0)
                 exp_score = (exp_length_factor * 0.5 + kw_factor * 0.5) * 100
             
@@ -172,7 +195,7 @@ class ScoringEngine:
                 proj_score = min((role_relevant_projects / max(len(projects), 1)) * 1.5, 1.0) * 100
                 
             # 5. Education Relevance Score (5%)
-            edu_score = 40.0  # Base education consideration
+            edu_score = 0.0
             for edu in education:
                 edu_str = f"{edu.get('degree', '')} {edu.get('field', '')}".lower()
                 if any(deg in edu_str for deg in relevant_degrees):
@@ -222,7 +245,7 @@ class ScoringEngine:
         experience = parsed_data.get('experience', [])
         projects = parsed_data.get('projects', [])
         education = parsed_data.get('education', [])
-        raw_text = parsed_data.get('raw_text', '').lower()
+        experience_text = self._get_section_text(parsed_data, 'experience').lower()
         
         # 1. Skills Evidence Component (35%)
         # Evaluates both skill count and their evidence scores
@@ -237,11 +260,11 @@ class ScoringEngine:
         # 2. Experience Quality Component (25%)
         if experience:
             exp_count_factor = min(len(experience) / 3.0, 1.0)
-            verb_hits = sum(1 for v in self.action_verbs if v in raw_text)
+            verb_hits = sum(1 for v in self.action_verbs if v in experience_text)
             action_factor = min(verb_hits / 5.0, 1.0)
             experience_component = (exp_count_factor * 60 + action_factor * 40)
         else:
-            experience_component = 10.0 if raw_text else 0.0
+            experience_component = 0.0
             
         # 3. Projects Quality Component (20%)
         if projects:
@@ -253,10 +276,10 @@ class ScoringEngine:
             projects_component = 0.0
             
         # 4. Education Component (10%)
-        education_component = min(len(education) * 50, 100) if education else 30.0
+        education_component = min(len(education) * 50, 100) if education else 0.0
         
         # 5. Role Alignment Component (10%)
-        role_component = float(top_role_match) if top_role_match is not None else 60.0
+        role_component = float(top_role_match) if top_role_match is not None else 0.0
         
         overall = (
             (skills_component * self.profile_weights['skills_evidence']) +
@@ -277,21 +300,35 @@ class ScoringEngine:
         else:
             return "Low"
             
+    def calculate_skill_coverage(self, parsed_data: Dict[str, Any]) -> int:
+        """
+        Calculate current Skill Coverage (0-100) from verified breadth and section evidence.
+        """
+        skills = parsed_data.get('skills', [])
+        if not skills:
+            return 0
+            
+        section_evidence = parsed_data.get('section_evidence', {})
+        skills_section = set(section_evidence.get('skills_section', []))
+        project_skills = set(section_evidence.get('project_skills', []))
+        experience_skills = set(section_evidence.get('experience_skills', []))
+        evidence_scores = [self.calculate_skill_evidence_score(skill, parsed_data) for skill in skills]
+        
+        breadth_component = min(len(skills) / 10.0, 1.0) * 30
+        listed_component = (len(skills_section) / len(skills)) * 20
+        project_component = (len(project_skills) / len(skills)) * 20
+        experience_component = (len(experience_skills) / len(skills)) * 20
+        depth_component = (sum(evidence_scores) / len(evidence_scores)) * 0.10
+        
+        coverage = breadth_component + listed_component + project_component + experience_component + depth_component
+        return int(round(min(max(coverage, 0), 100)))
+        
     def calculate_skill_momentum(self, parsed_data: Dict[str, Any]) -> int:
         """
-        Calculate deterministic skill momentum (0-25) based on practical project applications and technical diversity.
+        Deprecated compatibility alias for Skill Coverage.
+        This is not historical momentum and must not be presented as growth.
         """
-        skills_count = len(parsed_data.get('skills', []))
-        projects_count = len(parsed_data.get('projects', []))
-        experience_count = len(parsed_data.get('experience', []))
-        
-        # Bounded deterministic calculation
-        base = min(skills_count // 2, 10)
-        proj_pts = min(projects_count * 3, 9)
-        exp_pts = min(experience_count * 2, 6)
-        
-        total_momentum = base + proj_pts + exp_pts
-        return min(max(total_momentum, 2), 25)
+        return self.calculate_skill_coverage(parsed_data)
     
     def generate_next_actions(self, parsed_data: Dict[str, Any], role_matches: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         """
@@ -384,7 +421,7 @@ class ScoringEngine:
         if fit_score >= 80:
             insights.append(f"Resume demonstrates strong multi-section evidence across {skills_count} verified technical competencies.")
         elif fit_score >= 60:
-            insights.append(f"Solid foundational profile with {skills_count} verified skills and clear growth trajectory.")
+            insights.append(f"Solid foundational profile with {skills_count} verified skills and room to deepen applied evidence.")
         else:
             insights.append("Profile would benefit from more concrete project descriptions and explicit skill references.")
             
@@ -395,7 +432,7 @@ class ScoringEngine:
             matched_skills = top_role.get('matched_required_skills', [])
             if matched_skills:
                 skills_str = ", ".join(matched_skills[:3])
-                insights.append(f"Highest alignment with {role_name} ({match_pct}% match) powered by verified proficiency in {skills_str}.")
+                insights.append(f"Highest alignment with {role_name} ({match_pct}% match) supported by resume evidence for {skills_str}.")
             else:
                 insights.append(f"Identified {role_name} as top potential trajectory ({match_pct}% match).")
                 

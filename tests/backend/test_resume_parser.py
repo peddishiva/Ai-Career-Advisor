@@ -81,6 +81,97 @@ Bachelor of Technology in Information Technology
         self.assertGreaterEqual(len(data['experience']), 2)
         self.assertGreaterEqual(len(data['projects']), 2)
         self.assertGreaterEqual(len(data['education']), 1)
+        
+    def test_phase_1_6_messy_section_headers(self):
+        """Verify parser supports realistic messy section headers."""
+        text = """
+Taylor Reed
+taylor.reed@example.com
+
+**1. CORE COMPETENCIES:**
+Python, SQL, Docker
+
+### WORK HISTORY
+Data Analyst - Insight Co
+- Developed SQL reporting pipelines with Python.
+
+* SELECTED PROJECTS:
+Portfolio API
+- Deployed services using Docker.
+
+ACADEMICS:
+Bachelor of Science in Computer Science
+
+CERTIFICATIONS:
+AWS Certified Cloud Practitioner
+"""
+        data = self.parser._extract_information(text)
+        
+        self.assertIn('Python', data['section_evidence']['skills_section'])
+        self.assertIn('SQL', data['section_evidence']['experience_skills'])
+        self.assertIn('Docker', data['section_evidence']['project_skills'])
+        self.assertEqual(len(data['experience']), 1)
+        self.assertEqual(len(data['projects']), 1)
+        self.assertEqual(len(data['education']), 1)
+        self.assertEqual(len(data['certifications']), 1)
+        
+    def test_phase_1_6_no_full_resume_fallback_skills_only(self):
+        """Skills-only resumes should not fabricate structured section evidence."""
+        text = """
+Jordan Lee
+
+TECH STACK:
+Python, SQL, React, Docker
+"""
+        data = self.parser._extract_information(text)
+        
+        self.assertEqual(data['experience'], [])
+        self.assertEqual(data['projects'], [])
+        self.assertEqual(data['education'], [])
+        self.assertEqual(data['certifications'], [])
+        
+    def test_phase_1_6_no_full_resume_fallback_projects_only(self):
+        """Project text must not become experience or education."""
+        text = """
+Jordan Lee
+
+SELECTED PROJECTS
+Built a Data Analyst dashboard using Python and SQL.
+"""
+        data = self.parser._extract_information(text)
+        
+        self.assertEqual(data['experience'], [])
+        self.assertEqual(data['education'], [])
+        self.assertEqual(len(data['projects']), 1)
+        
+    def test_phase_1_6_no_full_resume_fallback_education_only(self):
+        """Education text must not become experience or projects."""
+        text = """
+Jordan Lee
+
+ACADEMICS
+Bachelor of Arts in English Literature
+"""
+        data = self.parser._extract_information(text)
+        
+        self.assertEqual(data['experience'], [])
+        self.assertEqual(data['projects'], [])
+        self.assertEqual(len(data['education']), 1)
+        
+    def test_phase_1_6_certifications_do_not_become_experience(self):
+        """Certification section evidence should remain isolated."""
+        text = """
+Jordan Lee
+
+CERTIFICATIONS
+AWS Certified Cloud Practitioner
+"""
+        data = self.parser._extract_information(text)
+        
+        self.assertEqual(data['experience'], [])
+        self.assertEqual(data['projects'], [])
+        self.assertEqual(data['education'], [])
+        self.assertEqual(len(data['certifications']), 1)
 
 
 if __name__ == '__main__':

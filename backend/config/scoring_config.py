@@ -25,6 +25,7 @@ ROLE_MATCH_WEIGHTS: Dict[str, float] = {
 
 # Skill Evidence Scoring points per verified occurrence
 SKILL_EVIDENCE_POINTS = {
+    "mentioned_elsewhere": 10,    # Detected outside a dedicated evidence section
     "in_skills_section": 20,      # Stated in Skills section
     "in_project_entry": 30,       # Applied in at least one project
     "in_multiple_projects": 10,   # Applied across multiple projects
