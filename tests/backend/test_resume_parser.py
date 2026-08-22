@@ -208,6 +208,295 @@ AWS Certified Cloud Practitioner
         self.assertGreaterEqual(len(data['certifications']), 1)
         self.assertIn('Python', data['section_evidence']['skills_section'])
 
+    def test_phase_1_7_experience_section_splits_three_roles(self):
+        """Experience entries should split on role headers without blank lines."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+PROFESSIONAL EXPERIENCE
+AI Developer Intern - Infosys Springboard 2025
+- Built an AI quality auditing workflow with Python.
+- Automated scoring and reporting.
+SDET Intern - ECNODEV 2025
+- Tested API endpoints and UI flows.
+- Reported defects before release.
+Videography & Photography Lead - Campus Developer Group 2025 - 2026
+- Led event coverage and coordinated student teams.
+
+SKILLS
+Python, REST APIs, Testing
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['experience']), 3)
+        self.assertEqual(data['experience'][0]['title'], 'AI Developer Intern')
+        self.assertEqual(data['experience'][1]['title'], 'SDET Intern')
+        self.assertEqual(data['experience'][2]['title'], 'Videography & Photography Lead')
+        self.assertEqual(data['experience'][1]['company'], 'ECNODEV')
+
+    def test_phase_1_7_real_experience_header_still_splits(self):
+        """Legitimate role headers should continue to create experience entries."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+PROFESSIONAL EXPERIENCE
+Software Engineer - Sample Labs 2024 - Present
+Built APIs with Python.
+Data Analyst - Insight Co 2023 - 2024
+Analyzed operational dashboards with SQL.
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['experience']), 2)
+        self.assertEqual(data['experience'][0]['title'], 'Software Engineer')
+        self.assertEqual(data['experience'][1]['title'], 'Data Analyst')
+
+    def test_phase_1_7_action_verb_line_stays_inside_experience_entry(self):
+        """Bulletless action lines should not become fake job headers."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+PROFESSIONAL EXPERIENCE
+Videography & Photography Lead - Campus Developer Group 2025 - 2026
+Led coverage and coordination for Cloud Computing and Tech-Sprint campus events run with developer programs.
+Managed student teams during event execution.
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['experience']), 1)
+        self.assertEqual(data['experience'][0]['title'], 'Videography & Photography Lead')
+        self.assertIn('Led coverage and coordination', data['experience'][0]['description'])
+        self.assertIn('Managed student teams', data['experience'][0]['description'])
+
+    def test_phase_1_7_docx_like_bulletless_experience_block_does_not_over_split(self):
+        """DOCX extraction can lose bullets; action lines should remain under the active role."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+PROFESSIONAL EXPERIENCE
+AI Developer Intern - Sample Internship 2025
+Built an AI auditing workflow with Python.
+Automated scoring and reporting for support teams.
+SDET Intern - Sample Company 2025
+Developed API endpoint test cases.
+Improved regression coverage across UI flows.
+Community Lead - Sample Developer Group 2025 - 2026
+Led event coordination for campus developer programs.
+Created onboarding materials for student teams.
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['experience']), 3)
+        self.assertIn('Automated scoring', data['experience'][0]['description'])
+        self.assertIn('Improved regression coverage', data['experience'][1]['description'])
+        self.assertIn('Created onboarding materials', data['experience'][2]['description'])
+
+    def test_phase_1_7_project_section_splits_four_projects(self):
+        """Project entries should split on title lines and keep bullet blocks together."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+ACADEMIC PROJECTS
+AI Call Auditor
+- Engineered an AI auditing pipeline with Python.
+- Generated structured reports.
+Career Advisor
+- Built a resume analyzer with React and FastAPI.
+- Produced role matches and recommendations.
+JARVIS Assistant Bot
+- Designed a voice assistant using Python.
+- Integrated contact automation.
+Financial Fraud Detector
+- Built a fraud detection dashboard with SQL.
+- Evaluated machine learning models.
+
+SKILLS
+Python, React, FastAPI, SQL, Machine Learning
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['projects']), 4)
+        self.assertEqual(
+            [project['title'] for project in data['projects']],
+            ['AI Call Auditor', 'Career Advisor', 'JARVIS Assistant Bot', 'Financial Fraud Detector']
+        )
+        self.assertTrue(all(project['technologies'] for project in data['projects']))
+
+    def test_phase_1_7_project_titles_strip_repository_link_markers(self):
+        """Project titles should remove trailing GitHub/link text generically."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+ACADEMIC PROJECTS
+AI Call Auditor - GitHub Link
+- Built an AI auditing pipeline with Python.
+Career Advisor — GitHub
+- Built a career dashboard with React.
+Financial Fraud Detector link
+- Built a fraud model with SQL.
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(
+            [project['title'] for project in data['projects']],
+            ['AI Call Auditor', 'Career Advisor', 'Financial Fraud Detector']
+        )
+
+    def test_phase_1_7_certifications_are_extracted_generically(self):
+        """Certification bullets should not require hard-coded provider keywords."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+CERTIFICATIONS & ACHIEVEMENTS
+- Oracle AI Certification - link
+- NPTEL - Python for Data Science; Natural Language Processing - link
+- Google Arcade 2025, Cohort 2 - Legend Player - link
+- Google Associate Cloud Engineer - Link
+- Languages: English, Telugu, Hindi
+"""
+        data = self.parser._extract_information(text)
+        names = [cert['name'] for cert in data['certifications']]
+
+        self.assertIn('Oracle AI Certification', names)
+        self.assertIn('NPTEL - Python for Data Science', names)
+        self.assertIn('NPTEL - Natural Language Processing', names)
+        self.assertIn('Google Arcade 2025, Cohort 2 - Legend Player', names)
+        self.assertIn('Google Associate Cloud Engineer', names)
+        self.assertFalse(any(name.lower().startswith('languages') for name in names))
+
+    def test_phase_1_7_hyderabad_does_not_create_fake_education_entry(self):
+        """Degree matching must not match partial text inside Hyderabad."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+EDUCATION
+B.Tech Computer Science - Sample Institute, Hyderabad 2023 - 2027
+- CGPA: 7.63 / 10
+Hyderabad
+2023 - 2027
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['education']), 1)
+        self.assertEqual(data['education'][0]['degree'], 'B.Tech')
+        self.assertEqual(data['education'][0]['field'], 'Computer Science')
+        self.assertFalse(any('bad' in edu['degree'].lower() for edu in data['education']))
+
+    def test_phase_1_7_valid_education_patterns_are_extracted(self):
+        """Common degree patterns should still be accepted."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+EDUCATION
+Bachelor of Science in Computer Science - Sample University
+M.Tech in AI - Sample Institute
+M.S. in Data Science - Example Graduate School
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['education']), 3)
+        self.assertEqual(data['education'][0]['field'], 'Computer Science')
+        self.assertEqual(data['education'][1]['field'], 'AI')
+        self.assertEqual(data['education'][2]['field'], 'Data Science')
+
+    def test_phase_1_7_section_isolation_after_entry_splitting(self):
+        """Experience and project splitting must stay inside their own sections."""
+        text = """
+Jordan Lee
+jordan.lee@example.com
+
+PROFESSIONAL EXPERIENCE
+Software Engineer - Sample Co 2024 - Present
+- Built backend APIs with Python.
+
+ACADEMIC PROJECTS
+Portfolio Dashboard
+- Built a React dashboard with SQL reports.
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['experience']), 1)
+        self.assertEqual(len(data['projects']), 1)
+        self.assertIn('Software Engineer', data['experience'][0]['description'])
+        self.assertNotIn('Portfolio Dashboard', data['experience'][0]['description'])
+        self.assertIn('Portfolio Dashboard', data['projects'][0]['description'])
+        self.assertNotIn('Software Engineer', data['projects'][0]['description'])
+
+    def test_phase_1_7_sanitized_real_world_resume_structure(self):
+        """Sanitized real-world resume structure should preserve distinct entries."""
+        text = """
+Sample Candidate
+sample.candidate@example.com
++1 555-123-4567
+
+SUMMARY
+Computer science undergraduate focused on applied AI and full-stack development.
+
+PROFESSIONAL EXPERIENCE
+AI Developer Intern - Sample Internship 2025
+- Built an AI auditing tool using Python.
+SDET Intern - Sample Company 2025
+- Tested API endpoints and frontend flows.
+Community Lead - Sample Developer Group 2025 - 2026
+- Led campus technology event coordination.
+
+EDUCATION
+B.Tech Computer Science and Engineering - Sample Institute, Hyderabad 2023 - 2027
+- CGPA: 7.63 / 10
+
+ACADEMIC PROJECTS
+AI Call Auditor
+- Engineered an AI auditing pipeline.
+Career Advisor
+- Built a resume analysis workflow with React and FastAPI.
+JARVIS Assistant Bot
+- Designed a voice assistant using Python.
+Financial Fraud Detector
+- Built a machine learning fraud detector with SQL.
+
+SKILLS
+Python, JavaScript, React, FastAPI, SQL, Machine Learning, Git
+
+CERTIFICATIONS & ACHIEVEMENTS
+- Oracle AI Certification - link
+- NPTEL - Python for Data Science; Natural Language Processing - link
+- Google Associate Cloud Engineer - Link
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['experience']), 3)
+        self.assertEqual(len(data['projects']), 4)
+        self.assertGreaterEqual(len(data['certifications']), 4)
+        self.assertEqual(len(data['education']), 1)
+
+    def test_phase_1_7_letter_spaced_headings_do_not_inflate_global_skills(self):
+        """Heading letters such as R/C should not become global skills by themselves."""
+        text = """
+Sample Candidate
+sample.candidate@example.com
+
+P R O F E S S I O N A L E X P E R I E N C E
+Software Engineer - Sample Co 2024 - Present
+- Built APIs with Python.
+
+S K I L L S
+Python
+"""
+        data = self.parser._extract_information(text)
+
+        self.assertIn('Python', data['skills'])
+        self.assertNotIn('R', data['skills'])
+        self.assertNotIn('C', data['skills'])
+
 
 if __name__ == '__main__':
     unittest.main()
