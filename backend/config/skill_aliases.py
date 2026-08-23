@@ -110,6 +110,9 @@ SKILL_ALIASES: Dict[str, List[str]] = {
     "Teamwork": ["teamwork", "collaboration", "cross-functional", "interpersonal skills"],
     "System Design": ["system design", "software architecture", "high level design", "low level design"],
     "Testing": ["unit testing", "integration testing", "test automation", "pytest", "jest", "cypress", "selenium", "tdd", "qa"],
+    "Data Structures": ["data structures", "dsa"],
+    "Algorithms": ["algorithm", "algorithms", "dsa"],
+    "OOP": ["oop", "object oriented programming", "object-oriented programming"],
 }
 
 # Skill domain equivalence / sub-skill mapping
@@ -117,6 +120,7 @@ SKILL_ALIASES: Dict[str, List[str]] = {
 SKILL_RELATIONS: Dict[str, Set[str]] = {
     "SQL": {"SQL", "PostgreSQL", "MySQL", "SQLite", "Oracle Database", "Microsoft SQL Server"},
     "JavaScript": {"JavaScript", "TypeScript"},
+    "TypeScript": {"TypeScript", "JavaScript"},
     "Machine Learning": {"Machine Learning", "Deep Learning", "Scikit-Learn", "TensorFlow", "PyTorch", "Keras"},
     "Deep Learning": {"Deep Learning", "TensorFlow", "PyTorch", "Keras"},
     "Data Analysis": {"Data Analysis", "Pandas", "NumPy", "Statistics", "Data Science"},

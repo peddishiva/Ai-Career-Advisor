@@ -104,7 +104,6 @@ export default function Home() {
         } else {
           localStorage.removeItem('resumeFileId');
         }
-        localStorage.removeItem('jobMatchResult');
         console.log('Analysis data stored in localStorage');
       }
       
@@ -191,6 +190,13 @@ export default function Home() {
               >
                 Analysis
               </Button>
+              <Button
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/jdxr-analyser')}
+              >
+                Compare with JD
+              </Button>
               <Button 
                 variant="ghost" 
                 className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -225,6 +231,14 @@ export default function Home() {
             onClick={scrollToUpload}
           >
             <Upload className="mr-2 h-5 w-5" /> Upload Your Resume
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="text-lg h-12 px-8"
+            onClick={() => router.push('/jdxr-analyser')}
+          >
+            <FileText className="mr-2 h-5 w-5" /> Compare Resume with JD
           </Button>
           <Button 
             size="lg" 

@@ -348,6 +348,39 @@ Financial Fraud Detector link
             ['AI Call Auditor', 'Career Advisor', 'Financial Fraud Detector']
         )
 
+    def test_project_link_date_metadata_stays_inside_project_entry(self):
+        text = """
+        Jordan Lee
+
+        PROJECTS
+        AI Call Auditor
+        LINK | 2024
+        - Built a Python service for call analysis.
+        Career Advisor
+        - Built a React application.
+        """
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['projects']), 2)
+        self.assertEqual([project['title'] for project in data['projects']], ['AI Call Auditor', 'Career Advisor'])
+        self.assertIn('Python', data['projects'][0]['technologies'])
+
+    def test_numeric_project_description_line_does_not_start_a_new_project(self):
+        text = """
+        Jordan Lee
+
+        PROJECTS
+        Financial Fraud Detector
+        Financial fraud detection using machine learning models.
+        10000+ fraudulent records achieved 97.6% accuracy score
+        Integrated MySQL storage with GCP deployment.
+        """
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['projects']), 1)
+        self.assertEqual(data['projects'][0]['title'], 'Financial Fraud Detector')
+        self.assertIn('10000+ fraudulent records', data['projects'][0]['description'])
+
     def test_phase_1_7_certifications_are_extracted_generically(self):
         """Certification bullets should not require hard-coded provider keywords."""
         text = """
@@ -430,6 +463,23 @@ Portfolio Dashboard
         self.assertNotIn('Portfolio Dashboard', data['experience'][0]['description'])
         self.assertIn('Portfolio Dashboard', data['projects'][0]['description'])
         self.assertNotIn('Software Engineer', data['projects'][0]['description'])
+
+    def test_education_heading_with_parenthetical_metadata_remains_isolated(self):
+        text = """
+        Sample Candidate
+
+        EDUCATION (7.63 CGPA)
+        Bachelor of Technology: CSE (Artificial Intelligence and Machine Learning)
+        Example Institute 2023-2027
+
+        SKILLS
+        Python, Git
+        """
+        data = self.parser._extract_information(text)
+
+        self.assertEqual(len(data['education']), 1)
+        self.assertIn('CSE', data['education'][0]['field'])
+        self.assertIn('skills', data['section_evidence']['sections_detected'])
 
     def test_phase_1_7_sanitized_real_world_resume_structure(self):
         """Sanitized real-world resume structure should preserve distinct entries."""

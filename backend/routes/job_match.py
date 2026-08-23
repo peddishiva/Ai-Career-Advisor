@@ -1,5 +1,7 @@
-"""
-Phase 2C deterministic resume-to-job matching route.
+"""Compatibility route for the legacy deterministic resume-to-job API.
+
+The frontend JDxR workflow uses the isolated session API in ``routes.jdxr``.
+This route remains available for existing API consumers.
 """
 
 import tempfile
@@ -10,6 +12,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from config.job_description_config import MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES
+from services.file_upload_service import UploadTooLargeError, copy_upload_with_limit, uploaded_file_size
 from services.job_match_api_service import JobMatchAPIError, JobMatchAPIService
 
 
@@ -83,21 +86,19 @@ def _save_temp_upload(file: UploadFile, suffix: str) -> Path:
         raise _job_description_file_too_large_error()
 
     temp_path: Optional[Path] = None
-    bytes_written = 0
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_path = Path(temp_file.name)
-            _rewind_upload(file)
-
-            while True:
-                chunk = file.file.read(UPLOAD_COPY_CHUNK_BYTES)
-                if not chunk:
-                    break
-                bytes_written += len(chunk)
-                if bytes_written > MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES:
-                    raise _job_description_file_too_large_error()
-                temp_file.write(chunk)
+            try:
+                copy_upload_with_limit(
+                    file,
+                    temp_file,
+                    MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES,
+                    UPLOAD_COPY_CHUNK_BYTES,
+                )
+            except UploadTooLargeError as exc:
+                raise _job_description_file_too_large_error() from exc
 
         return temp_path
     except Exception:
@@ -107,25 +108,7 @@ def _save_temp_upload(file: UploadFile, suffix: str) -> Path:
 
 
 def _uploaded_file_size(file: UploadFile) -> Optional[int]:
-    size = getattr(file, "size", None)
-    if isinstance(size, int) and size >= 0:
-        return size
-
-    try:
-        current_position = file.file.tell()
-        file.file.seek(0, 2)
-        size = file.file.tell()
-        file.file.seek(current_position)
-        return size
-    except (AttributeError, OSError):
-        return None
-
-
-def _rewind_upload(file: UploadFile) -> None:
-    try:
-        file.file.seek(0)
-    except (AttributeError, OSError):
-        return
+    return uploaded_file_size(file)
 
 
 def _job_description_file_too_large_error() -> JobMatchAPIError:

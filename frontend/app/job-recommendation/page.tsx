@@ -20,7 +20,6 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import JobMatchPanel from '@/components/job-match-panel';
 
 const jobRecommendations = [
   {
@@ -363,8 +362,6 @@ export default function JobRecommendationPage() {
             Explore Full Job Board
           </Button>
         </header>
-
-        <JobMatchPanel />
 
         <section className="grid gap-6 md:grid-cols-3">
           {highlightStats.map((stat) => (

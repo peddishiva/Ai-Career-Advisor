@@ -271,6 +271,35 @@ DEGREE_FIELD_KEYWORDS = (
     "analytics",
 )
 
+CAPABILITY_KEYWORDS = (
+    "data structures",
+    "algorithms",
+    "object oriented",
+    "object-oriented",
+    "oop",
+    "system design",
+    "problem solving",
+    "problem-solving",
+    "communication",
+    "teamwork",
+    "distributed systems",
+    "distributed/backend systems",
+    "event-driven architecture",
+    "high-scale systems",
+    "production systems",
+    "modern engineering practices",
+)
+
+CAPABILITY_CANONICAL_SKILLS = (
+    "Data Structures",
+    "Algorithms",
+    "OOP",
+    "System Design",
+    "Problem Solving",
+    "Communication",
+    "Teamwork",
+)
+
 CERTIFICATION_KEYWORDS = (
     "certification",
     "certifications",

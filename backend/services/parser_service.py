@@ -92,7 +92,7 @@ class ResumeParser:
         header_patterns = []
         for sec_name, pattern in self.section_headers.items():
             regex = re.compile(
-                rf'^\s*[#*_>`\-\s]*(?:\d+[\.)]\s*)?({pattern})\s*(?:[:\-]\s*(.*))?$',
+                rf'^\s*[#*_>`\-\s]*(?:\d+[\.)]\s*)?({pattern})\s*(?:\([^)]*\))?\s*(?:[:\-]\s*(.*))?$',
                 re.IGNORECASE
             )
             header_patterns.append((sec_name, regex))
@@ -354,19 +354,43 @@ class ResumeParser:
             r')(?![A-Za-z])',
             re.IGNORECASE
         )
-        
-        for raw_line in target_text.splitlines():
-            line = self._strip_list_prefix(raw_line)
+
+        lines = [self._strip_list_prefix(raw_line) for raw_line in target_text.splitlines()]
+        blocks: List[List[str]] = []
+        current: List[str] = []
+        for line in lines:
             if not line or re.match(r'^(?:cgpa|gpa|percentage|grade|score)\b', line, re.IGNORECASE):
                 continue
-            match = degree_pattern.search(line)
+            if degree_pattern.search(line):
+                if current:
+                    blocks.append(current)
+                current = [line]
+            elif current:
+                current.append(line)
+        if current:
+            blocks.append(current)
+
+        for block in blocks:
+            degree_line = block[0]
+            match = degree_pattern.search(degree_line)
             if not match:
                 continue
-                
+
             degree = re.sub(r'\s+', ' ', match.group('degree')).strip()
-            field_source = line[match.end():].strip(" ,:-–—|")
+            field_parts = [degree_line[match.end():]]
+            field_parts.extend(
+                line
+                for line in block[1:]
+                if not re.search(r'\b(?:university|college|institute|school)\b', line, re.IGNORECASE)
+                and not re.match(r'^(?:intermediate|higher\s+secondary|senior\s+secondary|high\s+school|secondary|class\s+\d+|diploma)\b', line, re.IGNORECASE)
+            )
+            field_source = " ".join(part.strip(" ,:-–—|") for part in field_parts if part.strip())
+            field_source = re.sub(r'\b(?:19|20)\d{2}\b(?:\s*[-–—]\s*(?:19|20)\d{2})?', '', field_source)
+            field_source = re.split(r'\b(?:cgpa|gpa|percentage|grade|score)\b', field_source, maxsplit=1, flags=re.IGNORECASE)[0]
+            field_source = re.split(r'\b(?:university|college|institute|school)\b', field_source, maxsplit=1, flags=re.IGNORECASE)[0]
             field_source = re.sub(r'^(?:of|in)\s+', '', field_source, flags=re.IGNORECASE).strip()
-            field = re.split(r'\s[-–—|]\s|\b(?:19|20)\d{2}\b', field_source, maxsplit=1)[0].strip(" ,:-–—|")
+            field_source = re.split(r'\s[-–—|]\s', field_source, maxsplit=1)[0]
+            field = re.sub(r'\s+', ' ', field_source).strip(" ,:-–—|")
             education.append({
                 'degree': degree[:100],
                 'field': field[:80]
@@ -378,6 +402,10 @@ class ResumeParser:
         """Detect project title boundary lines without splitting wrapped bullet text."""
         stripped = line.strip()
         if not stripped or self._is_bullet_line(stripped) or len(stripped) > 140:
+            return False
+        if re.match(r'^(?:github\s*)?link\b', stripped, re.IGNORECASE):
+            return False
+        if re.match(r'^\d[\d,]*(?:[+%])?\s', stripped):
             return False
         if stripped.endswith(('.', ',', ';')):
             return False

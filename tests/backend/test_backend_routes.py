@@ -27,6 +27,11 @@ class TestBackendRoutes(unittest.TestCase):
             'analysis': '/api/analysis',
             'jobs': '/api/jobs/recommendations',
             'job_match': '/api/job-match',
+            'jdxr_create': '/api/jdxr/session',
+            'jdxr_session': '/api/jdxr/session/{session_id}',
+            'jdxr_jd': '/api/jdxr/session/{session_id}/jd',
+            'jdxr_resume': '/api/jdxr/session/{session_id}/resume',
+            'jdxr_analyze': '/api/jdxr/session/{session_id}/analyze',
         }
         for name, expected_path in expected_routes.items():
             self.assertIn(expected_path, paths, f"Route '{name}' at {expected_path} is not registered")

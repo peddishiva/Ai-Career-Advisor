@@ -23,6 +23,7 @@ from job_description_fixtures import (
     PREFERRED_ONLY_JD,
     REQUIRED_ONLY_JD,
     SOFTWARE_ENGINEER_JD,
+    SDE_FIDELITY_JD,
 )
 from services.job_description_parser import JobDescriptionParser
 
@@ -273,6 +274,22 @@ Requirements
         results = [self.parser.parse_text(SOFTWARE_ENGINEER_JD) for _ in range(10)]
 
         self.assertTrue(all(result == results[0] for result in results))
+
+    def test_sde_fidelity_fixture_routes_requirements_without_inflation(self):
+        data = self.parser.parse_text(SDE_FIDELITY_JD)
+
+        self.assertEqual(len(data["experience_requirements"]), 1)
+        self.assertEqual(data["experience_requirements"][0]["min_years"], 2)
+        self.assertEqual(data["experience_requirements"][0]["max_years"], 5)
+        self.assertIsNone(data["experience_requirements"][0]["domain"])
+        self.assertIn("Python", data["required_skills"])
+        self.assertIn("JavaScript", data["required_skills"])
+        self.assertIn("TypeScript", data["required_skills"])
+        self.assertNotIn("Data Structures", data["required_skills"])
+        self.assertTrue(any(item["category"] == "capability" and "Data structures" in item["text"] for item in data["required_capability_requirements"]))
+        self.assertEqual(len(data["education_requirements"]), 1)
+        self.assertEqual(len(data["responsibilities"]), 8)
+        self.assertEqual(len(data["required_qualifications"]), len({item["text"] for item in data["required_qualifications"]}))
 
 
 if __name__ == "__main__":

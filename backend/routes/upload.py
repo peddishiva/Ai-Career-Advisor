@@ -13,6 +13,7 @@ from datetime import datetime
 from services.parser_service import ResumeParser
 from services.analysis_service import AnalysisService
 from services.resume_validator import ResumeValidator
+from services.file_upload_service import UploadTooLargeError, copy_upload_with_limit, uploaded_file_size
 from config.upload_config import MAX_RESUME_FILE_SIZE_BYTES, UPLOAD_COPY_CHUNK_BYTES
 
 router = APIRouter()
@@ -161,32 +162,16 @@ async def get_upload_status():
 
 
 def _uploaded_file_size(file: UploadFile):
-    size = getattr(file, "size", None)
-    if isinstance(size, int) and size >= 0:
-        return size
-
-    try:
-        current_position = file.file.tell()
-        file.file.seek(0, 2)
-        size = file.file.tell()
-        file.file.seek(current_position)
-        return size
-    except (AttributeError, OSError):
-        return None
+    return uploaded_file_size(file)
 
 
 def _copy_upload_with_limit(file: UploadFile, destination) -> None:
     try:
-        file.file.seek(0)
-    except (AttributeError, OSError):
-        pass
-
-    bytes_written = 0
-    while True:
-        chunk = file.file.read(UPLOAD_COPY_CHUNK_BYTES)
-        if not chunk:
-            break
-        bytes_written += len(chunk)
-        if bytes_written > MAX_RESUME_FILE_SIZE_BYTES:
-            raise HTTPException(status_code=413, detail="Resume file is too large. Maximum file size is 5MB.")
-        destination.write(chunk)
+        copy_upload_with_limit(
+            file,
+            destination,
+            MAX_RESUME_FILE_SIZE_BYTES,
+            UPLOAD_COPY_CHUNK_BYTES,
+        )
+    except UploadTooLargeError as exc:
+        raise HTTPException(status_code=413, detail="Resume file is too large. Maximum file size is 5MB.") from exc

@@ -379,6 +379,35 @@ CA Eligibility Tracker
 """
 
 
+SDE_FIDELITY_RESUME = """
+Sample SDE Candidate
+sample.sde@example.com
+
+SKILLS
+Python, Java, JavaScript, React, MySQL, GCP, Git, DSA, OOP, DBMS, Operating Systems, Computer Networks, SDLC, Machine Learning, NLP, Pandas
+
+PROFESSIONAL EXPERIENCE
+SDET Intern | Example QA Lab | 2024
+- Built automated testing and CI/CD workflows for software services.
+AI Developer Intern | Example Learning | 2025
+- Developed Python and JavaScript applications with REST APIs.
+
+PROJECTS
+AI Call Auditor
+- Built a Python backend API with automated testing.
+AI Assistant / JARVIS
+- Developed a JavaScript software application.
+Career Advisor
+- Built a web application with Python APIs.
+
+EDUCATION
+Bachelor of Technology
+CSE (Artificial Intelligence and Machine Learning)
+Example Institute of Technology
+2023-2027
+"""
+
+
 def parsed_resume(text: str) -> dict:
     return ResumeParser().parse_text(text)
 

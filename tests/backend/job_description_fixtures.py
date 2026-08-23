@@ -300,6 +300,50 @@ React
 """
 
 
+SDE_FIDELITY_JD = """
+Software Development Engineer (SDE)
+Company: Example Systems
+Location: Remote
+
+Experience
+2-5 years
+
+Requirements
+- Bachelor's degree in Computer Science, Engineering, or related field, or equivalent experience.
+- Strong programming skills in Java, Python, Go, C++, or JavaScript/TypeScript.
+- Data structures
+- Algorithms
+- OOP
+- System design
+- REST APIs
+- Distributed/backend systems
+- SQL
+- Relational/NoSQL databases
+- Git
+- Problem solving
+- Communication
+
+Nice to Have
+- AWS/Azure/GCP
+- Docker/Kubernetes
+- Microservices
+- Event-driven architecture
+- Automated testing
+- CI/CD
+- High-scale/production systems
+
+Responsibilities
+- Design and develop scalable software.
+- Write maintainable and tested code.
+- Build APIs, services, and backend components.
+- Debug performance and reliability issues.
+- Participate in code reviews and design discussions.
+- Collaborate across teams.
+- Support CI/CD, monitoring, and production operations.
+- Apply modern engineering practices.
+"""
+
+
 REALISTIC_JDS = {
     "software_engineer": SOFTWARE_ENGINEER_JD,
     "data_analyst": DATA_ANALYST_JD,

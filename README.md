@@ -7,6 +7,8 @@ An intelligent career guidance platform that analyzes resumes and provides perso
 - **Resume Upload & Parsing** - Support for PDF and DOCX formats
 - **AI-Powered Analysis** - Intelligent skill assessment and career insights
 - **Role Matching** - Find the best career roles based on your profile
+- **JDxR Analyser** - Validate a job description, validate a session-specific resume, and compare them locally
+- **Job Recommendations** - Browse curated opportunities independently from JDxR comparisons
 - **Personalized Recommendations** - Get actionable next steps for career growth
 - **Modern UI** - Beautiful, responsive interface with dark/light theme support
 
@@ -35,7 +37,7 @@ An intelligent career guidance platform that analyzes resumes and provides perso
 
 ```bash
 git clone <your-repo-url>
-cd AiCarrerAvisor
+cd Ai-Career-Advisor
 ```
 
 ### 2. Install Frontend Dependencies
@@ -101,14 +103,22 @@ Frontend runs on: `http://localhost:3000`
 3. Wait for the AI analysis to complete
 4. View your personalized career insights and recommendations
 
-### Deterministic Job Matching
+### Resume Analysis
 
-After a resume is analyzed, use the job matching flow to paste a job description or upload a PDF/DOCX/DOC job-description document. The matcher validates and parses the description locally, separates required from preferred qualifications, and reports evidence-based alignment, gaps, readiness, and recommendations. It does not call an LLM or external job API. Resume uploads and job-description documents are limited to 5 MB each.
+Upload a resume from the home page to open the independent Resume Analysis workflow. Resume Analysis stores only its own analysis state and does not depend on a job description comparison.
+
+### JDxR Analyser
+
+Open `/jdxr-analyser` or use **Compare Resume with JD** on the home page. Each comparison creates an isolated local session under `uploads/jdxr/<session-id>/`, validates the job description first, validates the resume second, and then runs the deterministic matcher. It does not call an LLM or external job API. Resume and job-description documents are limited to 5 MB each.
+
+### Job Recommendations
+
+Open `/job-recommendation` to browse the recommendation and discovery experience. It is independent from JDxR session state.
 
 ## 🏗️ Project Structure
 
 ```
-AiCarrerAvisor/
+Ai-Career-Advisor/
 ├── frontend/           # Next.js frontend application
 ├── backend/           # Python FastAPI backend
 │   ├── routes/       # API endpoints

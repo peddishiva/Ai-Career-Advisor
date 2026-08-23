@@ -8,6 +8,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from config.job_description_config import (
     CERTIFICATION_KEYWORDS,
+    CAPABILITY_KEYWORDS,
+    CAPABILITY_CANONICAL_SKILLS,
     DEGREE_FIELD_KEYWORDS,
     EMPLOYMENT_TYPES,
     ELIGIBILITY_CONTEXT_MARKERS,
@@ -21,6 +23,7 @@ from config.job_description_config import (
     REQUIRED_LANGUAGE,
     REQUIRED_SECTION_NAMES,
 )
+from config.skill_aliases import get_canonical_skill
 from services.parser_service import ResumeParser
 from utils.job_description_normalization import (
     canonical_jd_section,
@@ -45,7 +48,7 @@ class JobDescriptionParser:
             re.I,
         )
         self.experience_pattern = re.compile(
-            r"\b(?P<years>\d+)\s*(?:\+|-\s*\d+|to\s+\d+)?\s*(?:years?|yrs?)\b"
+            r"\b(?P<min_years>\d+)\s*(?:(?:-|–|—|to)\s*(?P<max_years>\d+)|(?P<plus>\+))?\s*(?:years?|yrs?)\b"
             r"(?P<tail>[^.\n;]*)",
             re.I,
         )
@@ -253,6 +256,7 @@ class JobDescriptionParser:
 
     def _extract_skills(self, sections: Dict[str, str], required: bool) -> List[str]:
         skills: List[str] = []
+        capability_skills = set(CAPABILITY_CANONICAL_SKILLS)
         for section, line in self._iter_all_section_lines(sections):
             if self._is_education_requirement(line) or self.certification_pattern.search(line):
                 continue
@@ -261,7 +265,11 @@ class JobDescriptionParser:
                 continue
             if not required and requirement_type != "preferred":
                 continue
-            skills.extend(extract_matched_skills(line).keys())
+            skills.extend(
+                skill
+                for skill in extract_matched_skills(line).keys()
+                if skill not in capability_skills
+            )
         return dedupe_preserve_order(skills)
 
     def _extract_experience_requirements(self, sections: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -270,18 +278,19 @@ class JobDescriptionParser:
             if self._is_noise_line(line):
                 continue
             requirement_type = self._requirement_type(section, line)
-            if requirement_type is None and "experience" not in line.lower():
-                continue
-            if "experience" not in line.lower() and not self.experience_pattern.search(line):
-                continue
-
             match = self.experience_pattern.search(line)
-            years = int(match.group("years")) if match else None
+            if not self._is_experience_requirement(section, line, match):
+                continue
+            minimum_years = int(match.group("min_years")) if match else None
+            maximum_years = int(match.group("max_years")) if match and match.group("max_years") else None
             domain = self._extract_experience_domain(line, match.group("tail") if match else "")
             requirements.append(
                 {
                     "text": line,
-                    "years": years,
+                    "raw_text": line,
+                    "years": minimum_years,
+                    "min_years": minimum_years,
+                    "max_years": maximum_years,
                     "domain": domain,
                     "source_section": section,
                     "requirement_type": requirement_type or "required",
@@ -358,10 +367,12 @@ class JobDescriptionParser:
             return "eligibility"
         if self._is_availability_requirement(line):
             return "availability"
-        if self._is_domain_knowledge_requirement(line):
-            return "domain_knowledge"
         if self.certification_pattern.search(line):
             return "certification"
+        if self._is_capability_requirement(line):
+            return "capability"
+        if self._is_domain_knowledge_requirement(line):
+            return "domain_knowledge"
         return "general"
 
     def _has_explicit_eligibility_language(self, line: str) -> bool:
@@ -407,6 +418,25 @@ class JobDescriptionParser:
             re.search(r"\b(?:knowledge|understanding|familiarity|background)\b", line, re.I)
             and re.search(r"\b(?:accounting|finance|financial|audit|tax|banking)\b", line, re.I)
         )
+
+    def _is_capability_requirement(self, line: str) -> bool:
+        lowered = line.lower()
+        if any(keyword in lowered for keyword in CAPABILITY_KEYWORDS):
+            return True
+        capability_skills = set(CAPABILITY_CANONICAL_SKILLS)
+        return any(get_canonical_skill(skill) in capability_skills for skill in extract_matched_skills(line).keys())
+
+    def _is_experience_requirement(
+        self,
+        section: str,
+        line: str,
+        match: Optional[re.Match],
+    ) -> bool:
+        if self._is_education_requirement(line) or self._is_availability_requirement(line):
+            return False
+        if match:
+            return True
+        return section == "experience" and bool(re.search(r"\b(?:professional|relevant|work|industry)\s+experience\b", line, re.I))
 
     def _qualification_fragments(self, line: str) -> List[str]:
         fragments = re.split(r"(?<=[.!?])\s+|;\s*", line.strip())
@@ -473,7 +503,9 @@ class JobDescriptionParser:
                     yield name, line
 
     def _extract_experience_domain(self, line: str, tail: str) -> Optional[str]:
-        source = tail or line
+        source = tail or ""
+        if not source or not re.search(r"[A-Za-z]", source):
+            return None
         source = re.sub(r"^(?:\s+of)?\s*(?:professional|hands-on|relevant)?\s*", "", source, flags=re.I)
         source = re.sub(r"^experience\s*(?:in|with|building|using|as)?\s*", "", source, flags=re.I)
         source = re.sub(r"^(?:in|with|building|using|as)\s+", "", source, flags=re.I)

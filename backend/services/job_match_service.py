@@ -28,7 +28,7 @@ from config.job_match_config import (
     SKILL_STATUS_SCORES,
     TEXT_STOP_WORDS,
 )
-from config.skill_aliases import SKILL_RELATIONS, get_canonical_skill, satisfies_skill
+from config.skill_aliases import SKILL_ALIASES, SKILL_RELATIONS, get_canonical_skill, satisfies_skill
 from utils.normalization import extract_matched_skills
 from utils.scoring_logic import ScoringEngine
 
@@ -290,9 +290,11 @@ class JobMatchService:
             }
 
         for requirement in requirements:
-            required_years = requirement.get("years")
+            required_years = requirement.get("min_years", requirement.get("years"))
+            maximum_years = requirement.get("max_years")
             domain = requirement.get("domain")
-            candidate_years = self._candidate_years_for_domain(experience_entries, domain, jd_skills)
+            job_title = jd_data.get("job_title")
+            candidate_years = self._candidate_years_for_domain(experience_entries, domain, jd_skills, job_title)
             domain_score = self._domain_alignment_score(domain, jd_skills, self._experience_text(resume_data))
             years_score, status = self._years_score(required_years, candidate_years)
             score = int(round(
@@ -303,13 +305,15 @@ class JobMatchService:
                 {
                     "requirement": requirement.get("text", ""),
                     "required_years": required_years,
+                    "minimum_required_years": required_years,
+                    "maximum_target_years": maximum_years,
                     "candidate_years": candidate_years,
                     "domain": domain,
                     "domain_score": domain_score,
                     "score": score,
                     "status": status,
-                    "resume_evidence": self._experience_evidence_summary(experience_entries, domain, jd_skills),
-                    "reason": self._experience_reason(required_years, candidate_years, domain_score, status),
+                    "resume_evidence": self._experience_evidence_summary(experience_entries, domain, jd_skills, job_title),
+                    "reason": self._experience_reason(required_years, maximum_years, candidate_years, domain_score, status),
                     "requirement_type": requirement.get("requirement_type", "required"),
                 }
             )
@@ -345,9 +349,16 @@ class JobMatchService:
         matched_skills: Set[str] = set()
         matched_projects = []
         for project in projects:
+            project_text = self._project_evidence_text(project)
             project_skills = set(self._canonical_skills(project.get("technologies", [])))
-            project_skills.update(extract_matched_skills(project.get("description", "")).keys())
-            overlap = sorted(skill for skill in target_skills if skill in project_skills)
+            project_skills.update(extract_matched_skills(project_text).keys())
+            overlap = sorted(
+                skill
+                for skill in target_skills
+                if skill in project_skills
+                or satisfies_skill(skill, project_skills)
+                or self._skill_text_present(skill, project_text)
+            )
             if overlap:
                 matched_skills.update(overlap)
                 matched_projects.append(
@@ -419,7 +430,7 @@ class JobMatchService:
         best = None
         for edu in education:
             degree_level = self._resume_degree_level(edu.get("degree", ""))
-            field = f"{edu.get('field', '')}".lower()
+            field = self._normalize_education_field(edu.get("field", ""))
             level_match = not required_levels or degree_level in required_levels
             field_match = self._education_field_match(field, required_fields, related_allowed)
             status = "aligned" if level_match and field_match else "not_aligned"
@@ -541,7 +552,7 @@ class JobMatchService:
         matched_evidence = [
             evidence
             for evidence in resume_evidence
-            if self._eligibility_evidence_matches(requirement_terms, evidence["text"])
+            if self._requirement_evidence_matches(requirement, requirement_terms, evidence["text"])
         ]
         requirement_type = requirement.get("requirement_type", "required")
         if matched_evidence:
@@ -566,6 +577,22 @@ class JobMatchService:
             "requirement_type": requirement_type,
             "source_section": requirement.get("source_section"),
         }
+
+    def _requirement_evidence_matches(
+        self,
+        requirement: Dict[str, Any],
+        requirement_terms: Set[str],
+        evidence_text: str,
+    ) -> bool:
+        if requirement.get("category") == "capability":
+            required_skills = set(extract_matched_skills(requirement.get("text", "")).keys())
+            evidence_skills = set(extract_matched_skills(evidence_text).keys())
+            if required_skills:
+                if any(satisfies_skill(skill, evidence_skills) for skill in required_skills):
+                    return True
+                if any(self._skill_text_present(skill, evidence_text) for skill in required_skills):
+                    return True
+        return self._eligibility_evidence_matches(requirement_terms, evidence_text)
 
     def _eligibility_requirements(self, jd_data: Dict[str, Any], requirement_type: str) -> List[Dict[str, Any]]:
         key = f"{requirement_type}_eligibility_requirements"
@@ -593,7 +620,11 @@ class JobMatchService:
             if text.strip():
                 evidence.append({"source": "education", "text": text.strip()})
         sections = resume_data.get("sections", {}) or {}
-        for source, section_name in (("education", "education_text"), ("certifications", "certifications_text")):
+        for source, section_name in (
+            ("education", "education_text"),
+            ("certifications", "certifications_text"),
+            ("skills", "skills_text"),
+        ):
             section_text = sections.get(section_name, "")
             if section_text and not any(item["source"] == source and item["text"] == section_text for item in evidence):
                 evidence.append({"source": source, "text": section_text})
@@ -974,6 +1005,7 @@ class JobMatchService:
         entries: List[Dict[str, Any]],
         domain: Optional[str],
         jd_skills: List[str],
+        job_title: Optional[str] = None,
     ) -> Optional[float]:
         total = 0.0
         saw_relevant_date = False
@@ -983,7 +1015,7 @@ class JobMatchService:
             if duration is None:
                 continue
             saw_any_date = True
-            if self._experience_entry_relevant(entry, domain, jd_skills):
+            if self._experience_entry_relevant(entry, domain, jd_skills, job_title):
                 total += duration
                 saw_relevant_date = True
         if saw_relevant_date:
@@ -1008,12 +1040,20 @@ class JobMatchService:
             return 1.0
         return float(end - start)
 
-    def _experience_entry_relevant(self, entry: Dict[str, Any], domain: Optional[str], jd_skills: List[str]) -> bool:
+    def _experience_entry_relevant(
+        self,
+        entry: Dict[str, Any],
+        domain: Optional[str],
+        jd_skills: List[str],
+        job_title: Optional[str] = None,
+    ) -> bool:
         text = " ".join([entry.get("title", ""), entry.get("description", "")]).lower()
         entry_skills = set(self._canonical_skills(entry.get("skills_applied", [])))
         if domain and self._token_overlap(self._tokens(domain), self._tokens(text)) > 0:
             return True
         if entry_skills.intersection(jd_skills):
+            return True
+        if not domain and self._token_overlap(self._role_tokens(job_title), self._role_tokens(entry.get("title", ""))) > 0:
             return True
         return False
 
@@ -1028,27 +1068,66 @@ class JobMatchService:
         entries: List[Dict[str, Any]],
         domain: Optional[str],
         jd_skills: List[str],
+        job_title: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         evidence = []
         for entry in entries:
-            if self._experience_entry_relevant(entry, domain, jd_skills):
+            if self._experience_entry_relevant(entry, domain, jd_skills, job_title):
                 evidence.append({"title": entry.get("title", ""), "date": entry.get("date", "")})
         return evidence
 
     def _experience_reason(
         self,
         required_years: Optional[int],
+        maximum_years: Optional[int],
         candidate_years: Optional[float],
         domain_score: int,
         status: str,
     ) -> str:
+        requirement_label = self._experience_requirement_label(required_years, maximum_years)
         if status == "met":
-            return f"Resume experience dates support {candidate_years} years against a {required_years}+ year requirement."
+            return (
+                f"Required professional experience: {requirement_label}. Resume evidence supports approximately "
+                f"{self._format_years(candidate_years)}, which meets the minimum {required_years}-year requirement."
+            )
         if status == "unmet":
-            return f"Resume experience dates support {candidate_years} years, below the {required_years}+ year requirement."
+            return (
+                f"Required professional experience: {requirement_label}. Resume evidence supports approximately "
+                f"{self._format_years(candidate_years)}, which is below the minimum {required_years}-year requirement."
+            )
         if status == "insufficient_evidence":
-            return "Resume experience dates are unavailable or ambiguous, so professional duration was not guessed."
+            return f"Required professional experience: {requirement_label}. Resume experience dates are unavailable or ambiguous, so professional duration was not guessed."
         return f"Experience has {domain_score}% deterministic domain/skill overlap with the JD requirement."
+
+    def _experience_requirement_label(self, minimum_years: Optional[int], maximum_years: Optional[int]) -> str:
+        if minimum_years is None:
+            return "an unspecified duration"
+        if maximum_years is not None:
+            return f"{minimum_years}-{maximum_years} years"
+        return f"{minimum_years}+ years"
+
+    def _format_years(self, years: Optional[float]) -> str:
+        if years is None:
+            return "unknown"
+        return f"{years:g} year" if years == 1 else f"{years:g} years"
+
+    def _role_tokens(self, title: Optional[str]) -> Set[str]:
+        tokens = self._tokens(title or "")
+        families = {
+            "developer": "development",
+            "development": "development",
+            "engineer": "engineering",
+            "engineering": "engineering",
+            "sdet": "testing",
+            "tester": "testing",
+            "testing": "testing",
+            "qa": "testing",
+            "analyst": "analysis",
+            "analysis": "analysis",
+            "scientist": "science",
+            "science": "science",
+        }
+        return {families.get(token, token) for token in tokens}
 
     def _resume_text_alignment_score(self, target_text: str, resume_text: str) -> int:
         if not target_text or not resume_text:
@@ -1108,13 +1187,29 @@ class JobMatchService:
     def _education_field_match(self, resume_field: str, required_fields: List[str], related_allowed: bool) -> bool:
         if not required_fields:
             return True
+        normalized_resume_field = self._normalize_education_field(resume_field)
         for field in required_fields:
-            if field in resume_field or resume_field in field:
+            normalized_required_field = self._normalize_education_field(field)
+            if normalized_required_field in normalized_resume_field or normalized_resume_field in normalized_required_field:
                 return True
-        return related_allowed and self._is_related_education_field(resume_field)
+        return related_allowed and self._is_related_education_field(normalized_resume_field)
 
     def _is_related_education_field(self, resume_field: str) -> bool:
-        return any(field in resume_field for field in RELATED_EDUCATION_FIELDS)
+        return any(field in self._normalize_education_field(resume_field) for field in RELATED_EDUCATION_FIELDS)
+
+    def _normalize_education_field(self, field: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", " ", str(field or "").lower()).strip()
+        aliases = {
+            "cse": "computer science",
+            "cs": "computer science",
+            "ce": "computer engineering",
+            "ece": "electronics and communication engineering",
+            "aiml": "artificial intelligence machine learning",
+            "ai ml": "artificial intelligence machine learning",
+        }
+        for alias, replacement in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
+            normalized = re.sub(rf"\b{re.escape(alias)}\b", replacement, normalized)
+        return re.sub(r"\s+", " ", normalized).strip()
 
     def _education_reason(self, status: str, edu: Dict[str, Any], requirement: Dict[str, Any]) -> str:
         resume_label = f"{edu.get('degree', '')} {edu.get('field', '')}".strip()
@@ -1154,11 +1249,38 @@ class JobMatchService:
     def _text_match(self, skill: str, text: str) -> bool:
         return skill.lower() in text.lower()
 
+    def _skill_text_present(self, skill: str, text: str) -> bool:
+        related = SKILL_RELATIONS.get(skill, set())
+        candidates = {skill, *related}
+        terms = {
+            alias
+            for canonical in candidates
+            for alias in [canonical, *SKILL_ALIASES.get(canonical, [])]
+            if alias
+        }
+        return any(
+            re.search(rf"(?<![a-z0-9_]){re.escape(term.lower())}(?![a-z0-9_])", (text or "").lower())
+            for term in terms
+        )
+
     def _experience_text(self, resume_data: Dict[str, Any]) -> str:
-        return "\n".join(entry.get("description", "") for entry in resume_data.get("experience", []))
+        return "\n".join(
+            " ".join(
+                str(entry.get(field, ""))
+                for field in ("title", "company", "date", "description", "skills_applied")
+            )
+            for entry in resume_data.get("experience", [])
+        )
 
     def _project_text(self, resume_data: Dict[str, Any]) -> str:
-        return "\n".join(project.get("description", "") for project in resume_data.get("projects", []))
+        return "\n".join(self._project_evidence_text(project) for project in resume_data.get("projects", []))
+
+    def _project_evidence_text(self, project: Dict[str, Any]) -> str:
+        return " ".join(
+            str(project.get(field, ""))
+            for field in ("title", "description", "technologies", "technology", "skills")
+            if project.get(field)
+        )
 
     def _tokens(self, text: str) -> Set[str]:
         return {

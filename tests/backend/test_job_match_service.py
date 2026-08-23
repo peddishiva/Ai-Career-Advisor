@@ -40,12 +40,14 @@ from job_match_fixtures import (
     SKILLS_ONLY_AWS_RESUME,
     SOFTWARE_ENGINEER_JD,
     SOFTWARE_ENGINEER_RESUME,
+    SDE_FIDELITY_RESUME,
     TRAINEE_JD,
     TRAINEE_RESUME,
     parsed_jd,
     parsed_resume,
 )
 from services.job_match_service import JobMatchService
+from job_description_fixtures import SDE_FIDELITY_JD
 
 
 class TestJobMatchService(unittest.TestCase):
@@ -291,6 +293,50 @@ class TestJobMatchService(unittest.TestCase):
         results = [self.service.match(resume_data, jd_data) for _ in range(10)]
 
         self.assertTrue(all(result == results[0] for result in results))
+
+    def test_sde_fidelity_education_projects_and_experience_range(self):
+        resume = parsed_resume(SDE_FIDELITY_RESUME)
+        jd = parsed_jd(SDE_FIDELITY_JD)
+        result = self.service.match(resume, jd)
+
+        self.assertEqual(len(resume["experience"]), 2)
+        self.assertEqual(len(resume["projects"]), 3)
+        self.assertEqual(resume["education"][0]["field"], "CSE (Artificial Intelligence and Machine Learning)")
+        self.assertEqual(result["education_alignment"]["status"], "aligned")
+        self.assertGreater(result["project_alignment"]["score"], 0)
+        self.assertEqual(result["experience_alignment"]["requirements"][0]["required_years"], 2)
+        self.assertEqual(result["experience_alignment"]["requirements"][0]["maximum_target_years"], 5)
+        self.assertIn("minimum 2-year requirement", result["experience_alignment"]["requirements"][0]["reason"])
+        self.assertNotIn("5+ year requirement", result["experience_alignment"]["requirements"][0]["reason"])
+        capability_requirements = result["qualification_alignment"]["requirements"]
+        self.assertEqual(
+            next(item for item in capability_requirements if item["requirement"] == "Algorithms")["status"],
+            "matched",
+        )
+
+    def test_experience_range_uses_minimum_and_does_not_reject_above_target(self):
+        jd = parsed_jd("""
+        Software Engineer
+        Requirements
+        - 2-5 years of professional software development experience.
+        """)
+
+        def result_for(date_text):
+            return self.service.match(
+                {
+                    "skills": ["Python"],
+                    "section_evidence": {"skills_section": ["Python"]},
+                    "experience": [{"title": "Software Engineer", "company": "Example", "date": date_text, "description": "Built Python software.", "skills_applied": ["Python"]}],
+                    "education": [],
+                    "projects": [],
+                    "certifications": [],
+                },
+                jd,
+            )["experience_alignment"]
+
+        self.assertEqual(result_for("2025")["status"], "unmet")
+        self.assertEqual(result_for("2023-2026")["status"], "met")
+        self.assertEqual(result_for("2020-2026")["status"], "met")
 
 
 if __name__ == "__main__":
