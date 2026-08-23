@@ -273,14 +273,18 @@ class JobDescriptionValidator:
         employment_type_keys = {heading_key(value) for value in EMPLOYMENT_TYPES}
         for line in lines[:12]:
             cleaned = clean_jd_item(line).lower()
-            if re.match(r"^(?:company|employer|organization)\s*[:\-]", cleaned):
+            if re.match(r"^(?:company|employer|organization|about)\s*[:\-]", cleaned):
                 signals.add("company_metadata")
+            if re.match(r"^(?:job\s+id|job\s+number|requisition\s+id|req\s+id|posting\s+id)\s*[:#\-]", cleaned):
+                signals.add("job_id_metadata")
             if re.match(r"^(?:location|work\s+location)\s*[:\-]", cleaned):
                 signals.add("location_metadata")
             if re.match(r"^(?:job\s+type|employment\s+type|type)\s*[:\-]", cleaned):
                 signals.add("employment_type_metadata")
             if heading_key(cleaned) in employment_type_keys:
                 signals.add("employment_type_metadata")
+            if re.search(r"\b(?:candidate|applicant|trainee|intern|internship|employment|industrial training)\b", cleaned):
+                signals.add("candidate_or_employment_context")
         return signals
 
     def _has_unsectioned_jd_shape(self, text: str, lines: List[str]) -> bool:

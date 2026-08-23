@@ -45,6 +45,43 @@ Preferred
 """
 
 
+FINANCIAL_ANALYST_INTERN_JD = """
+Financial Analyst Intern
+Job ID: XXXXX | Example Corp
+Company: Example Corp
+
+Description
+Example Corp is hiring finance trainees for a structured internship program.
+Example Corp is a global organization serving customers across multiple markets.
+
+Key job responsibilities
+Are you looking for an opportunity to kick-start your Finance career in an exciting and fast-growing industry?
+The selected candidate will work with business and finance leaders to deliver financial analysis.
+We are hiring Industrial Trainees for finance analyst internship roles.
+
+A day in the life
+The candidate will work with stakeholders across audit, business finance, accounting, and planning.
+This role is for professional finance Article Trainees pursuing Industrial Training.
+
+Basic Qualifications
+- Must be pursuing CA and have cleared IPCC.
+- Must have completed or be eligible for 12-18 months of industrial training/articleship.
+- Available for the required training period.
+- Good knowledge of accounting and finance.
+
+Preferred Qualifications
+- Strong communication.
+- Attention to detail.
+- Analytical and problem solving skills.
+- Proficiency in MS Excel.
+
+Job details
+Remote
+Internships for students
+Finance and business services
+"""
+
+
 ML_ENGINEER_JD = """
 Machine Learning Engineer
 Company: ModelWorks AI
@@ -266,6 +303,7 @@ React
 REALISTIC_JDS = {
     "software_engineer": SOFTWARE_ENGINEER_JD,
     "data_analyst": DATA_ANALYST_JD,
+    "financial_analyst_intern": FINANCIAL_ANALYST_INTERN_JD,
     "ml_engineer": ML_ENGINEER_JD,
     "devops_cloud": DEVOPS_CLOUD_JD,
     "entry_level_software_engineer": ENTRY_LEVEL_SOFTWARE_ENGINEER_JD,

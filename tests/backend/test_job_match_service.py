@@ -17,20 +17,31 @@ from job_match_fixtures import (
     ALIAS_JD,
     ALIAS_RESUME,
     BACKEND_EXPERIENCE_JD,
+    CA_FINANCIAL_RESUME,
     CERTIFICATION_JD,
     COMMERCE_EDUCATION_RESUME,
     DATA_ANALYST_MISMATCH_RESUME,
     EDUCATION_JD,
+    ELIGIBILITY_JD,
+    FINANCIAL_ANALYST_RESUME,
+    LICENSE_JD,
+    LICENSE_RESUME,
     MISSING_DATE_EXPERIENCE_RESUME,
+    MEMBERSHIP_JD,
+    MEMBERSHIP_RESUME,
+    PREFERRED_QUALIFICATION_JD,
     PREFERRED_ONLY_JD,
     PREFERRED_TRAP_JD,
     PREFERRED_TRAP_RESUME,
     PROJECT_ONLY_BACKEND_RESUME,
+    PROJECT_ONLY_ELIGIBILITY_RESUME,
     REQUIRED_ONLY_JD,
     RESPONSIBILITIES_ONLY_JD,
     SKILLS_ONLY_AWS_RESUME,
     SOFTWARE_ENGINEER_JD,
     SOFTWARE_ENGINEER_RESUME,
+    TRAINEE_JD,
+    TRAINEE_RESUME,
     parsed_jd,
     parsed_resume,
 )
@@ -94,12 +105,81 @@ class TestJobMatchService(unittest.TestCase):
         self.assertEqual(result["education_alignment"]["score"], 0)
         self.assertTrue(any(gap["type"] == "education" for gap in result["critical_gaps"]))
 
+    def test_financial_analyst_requirements_are_not_mapped_to_education(self):
+        result = self.service.match(parsed_resume(FINANCIAL_ANALYST_RESUME), parsed_jd(ELIGIBILITY_JD))
+
+        self.assertEqual("not_required", result["education_alignment"]["status"])
+        self.assertEqual([], result["education_alignment"]["requirements"])
+
+    def test_required_availability_and_domain_knowledge_are_critical_gaps(self):
+        result = self.service.match(
+            parsed_resume(FINANCIAL_ANALYST_RESUME),
+            parsed_jd("""
+            Financial Analyst Intern
+            Company: Example Finance
+
+            Basic Qualifications
+            - Pursuing CA.
+            - Available to intern for 12-18 months.
+            - Good knowledge of accounting and finance.
+            """),
+        )
+
+        self.assertEqual("not_required", result["education_alignment"]["status"])
+        self.assertEqual("missing", result["availability_alignment"]["status"])
+        self.assertEqual("missing", result["qualification_alignment"]["status"])
+        gap_types = {gap["type"] for gap in result["critical_gaps"]}
+        self.assertIn("availability", gap_types)
+        self.assertIn("domain_knowledge", gap_types)
+
     def test_preferred_certification_matches_without_critical_gap(self):
         result = self.service.match(parsed_resume(SOFTWARE_ENGINEER_RESUME), parsed_jd(CERTIFICATION_JD))
 
         self.assertEqual(result["certification_alignment"]["status"], "matched")
         self.assertEqual(result["certification_alignment"]["score"], 100)
         self.assertFalse(any(gap["type"] == "certification" for gap in result["critical_gaps"]))
+
+    def test_required_eligibility_gaps_are_critical_and_project_evidence_is_ignored(self):
+        result = self.service.match(parsed_resume(FINANCIAL_ANALYST_RESUME), parsed_jd(ELIGIBILITY_JD))
+
+        self.assertEqual(result["eligibility_alignment"]["status"], "missing")
+        self.assertEqual(len(result["eligibility_alignment"]["requirements"]), 3)
+        self.assertTrue(all(item["importance"] == "critical" for item in result["eligibility_alignment"]["requirements"]))
+        self.assertEqual(len([gap for gap in result["critical_gaps"] if gap["type"] == "eligibility"]), 3)
+
+        project_result = self.service.match(parsed_resume(PROJECT_ONLY_ELIGIBILITY_RESUME), parsed_jd(ELIGIBILITY_JD))
+        self.assertEqual(project_result["eligibility_alignment"]["status"], "missing")
+
+    def test_matching_qualification_evidence_is_explainable(self):
+        result = self.service.match(parsed_resume(CA_FINANCIAL_RESUME), parsed_jd(ELIGIBILITY_JD))
+
+        self.assertEqual(result["eligibility_alignment"]["status"], "matched")
+        self.assertTrue(all(item["status"] == "matched" for item in result["eligibility_alignment"]["requirements"]))
+        self.assertEqual([gap for gap in result["critical_gaps"] if gap["type"] == "eligibility"], [])
+
+    def test_generic_license_membership_and_trainee_eligibility(self):
+        license_result = self.service.match(parsed_resume(LICENSE_RESUME), parsed_jd(LICENSE_JD))
+        membership_result = self.service.match(parsed_resume(MEMBERSHIP_RESUME), parsed_jd(MEMBERSHIP_JD))
+        trainee_result = self.service.match(parsed_resume(TRAINEE_RESUME), parsed_jd(TRAINEE_JD))
+
+        self.assertEqual(license_result["eligibility_alignment"]["status"], "matched")
+        self.assertEqual(membership_result["eligibility_alignment"]["status"], "matched")
+        self.assertEqual(trainee_result["eligibility_alignment"]["status"], "matched")
+
+    def test_preferred_qualification_gap_is_non_critical(self):
+        result = self.service.match(parsed_resume(FINANCIAL_ANALYST_RESUME), parsed_jd(PREFERRED_QUALIFICATION_JD))
+
+        self.assertEqual(result["eligibility_alignment"]["status"], "missing")
+        self.assertTrue(all(item["importance"] == "non_critical" for item in result["eligibility_alignment"]["requirements"]))
+        self.assertTrue(any(gap["type"] == "preferred_eligibility" for gap in result["non_critical_gaps"]))
+        self.assertFalse(any(gap["type"] == "eligibility" for gap in result["critical_gaps"]))
+
+    def test_eligibility_output_is_deterministic_for_ten_runs(self):
+        resume_data = parsed_resume(CA_FINANCIAL_RESUME)
+        jd_data = parsed_jd(ELIGIBILITY_JD)
+        results = [self.service.match(resume_data, jd_data) for _ in range(10)]
+
+        self.assertTrue(all(result == results[0] for result in results))
 
     def test_alias_skills_canonicalize_and_match(self):
         result = self.service.match(parsed_resume(ALIAS_RESUME), parsed_jd(ALIAS_JD))

@@ -16,6 +16,7 @@ load_dotenv()
 from routes.upload import router as upload_router
 from routes.analysis import router as analysis_router
 from routes.jobs import router as jobs_router
+from routes.job_match import router as job_match_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -41,6 +42,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 app.include_router(upload_router, prefix="/api", tags=["Upload"])
 app.include_router(analysis_router, prefix="/api", tags=["Analysis"])
 app.include_router(jobs_router, prefix="/api", tags=["Jobs"])
+app.include_router(job_match_router, prefix="/api", tags=["Job Match"])
 
 @app.get("/")
 async def root():

@@ -15,6 +15,7 @@ from job_description_fixtures import (
     DATA_ANALYST_JD,
     DEVOPS_CLOUD_JD,
     ENTRY_LEVEL_SOFTWARE_ENGINEER_JD,
+    FINANCIAL_ANALYST_INTERN_JD,
     MESSY_INLINE_HEADER_JD,
     MISSING_OPTIONAL_SECTIONS_JD,
     ML_ENGINEER_JD,
@@ -87,6 +88,93 @@ Requirements
         self.assertTrue(data["education_requirements"][0]["related_field_allowed"])
         self.assertEqual(data["certifications"][0]["name"], "AWS certification")
         self.assertFalse(data["certifications"][0]["required"])
+
+    def test_explicit_eligibility_requirements_are_structured_separately(self):
+        data = self.parser.parse_text(FINANCIAL_ANALYST_INTERN_JD)
+
+        eligibility = data["required_eligibility_requirements"]
+        texts = [item["text"] for item in eligibility]
+        self.assertTrue(any("pursuing CA" in text for text in texts))
+        self.assertTrue(any("IPCC" in text for text in texts))
+        self.assertTrue(any("industrial training" in text for text in texts))
+        self.assertTrue(all(item["category"] == "eligibility" for item in eligibility))
+        self.assertEqual(data["education_requirements"], [])
+
+        availability = data["required_availability_requirements"]
+        self.assertTrue(any("12-18 months" in item["text"] for item in availability))
+
+        capabilities = data["required_capability_requirements"]
+        self.assertTrue(any("accounting and finance" in item["text"].lower() for item in capabilities))
+
+    def test_skill_like_ms_excel_is_not_education(self):
+        data = self.parser.parse_text("""
+        Financial Analyst Intern
+        Company: Example Finance
+
+        Preferred Qualifications
+        - Proficiency in MS Excel.
+        - Strong communication preferred.
+        """)
+
+        self.assertEqual(data["education_requirements"], [])
+        self.assertIn("Excel", data["preferred_skills"])
+        self.assertTrue(all(item["category"] != "education" for item in data["preferred_qualifications"]))
+
+    def test_responsibilities_split_sentences_and_filter_promotion(self):
+        data = self.parser.parse_text("""
+        Financial Analyst Intern
+        Company: Example Finance
+
+        Description
+        Example Finance is a global company serving customers across many markets.
+
+        Key Job Responsibilities
+        Are you looking for an opportunity to kick-start your finance career in an exciting industry?
+        The selected candidate will work with business and finance leaders to deliver financial analysis.
+        The candidate will work with key stakeholders; support accounting and planning teams.
+        """)
+
+        self.assertEqual(
+            data["responsibilities"],
+            [
+                "The selected candidate will work with business and finance leaders to deliver financial analysis.",
+                "The candidate will work with key stakeholders",
+                "support accounting and planning teams.",
+            ],
+        )
+        self.assertFalse(any("global company" in item for item in data["responsibilities"]))
+        self.assertFalse(any("kick-start" in item for item in data["responsibilities"]))
+
+    def test_soft_mentions_are_not_eligibility_requirements(self):
+        data = self.parser.parse_text("""
+        Financial Analyst
+        Company: Example Finance
+
+        Requirements
+        - Experience working with finance teams.
+        - Exposure to CA processes is helpful.
+        - Knowledge of accounting systems is preferred.
+        - Worked with licensed professionals.
+        """)
+
+        self.assertEqual(data["required_eligibility_requirements"], [])
+        self.assertEqual(data["preferred_eligibility_requirements"], [])
+
+    def test_education_and_certification_remain_separate_categories(self):
+        data = self.parser.parse_text("""
+        Compliance Analyst
+        Company: Example Compliance
+
+        Requirements
+        - Bachelor's degree in Accounting or Finance.
+        - CPA certification required.
+        - Must be registered with the relevant professional body.
+        """)
+
+        self.assertEqual(data["education_requirements"][0]["degree_level"], ["bachelor"])
+        self.assertEqual(data["certifications"][0]["name"], "CPA certification")
+        self.assertEqual(len(data["required_eligibility_requirements"]), 1)
+        self.assertNotIn("CPA certification required.", [item["text"] for item in data["required_eligibility_requirements"]])
 
     def test_responsibilities_are_clean_individual_items(self):
         data = self.parser.parse_text(DATA_ANALYST_JD)

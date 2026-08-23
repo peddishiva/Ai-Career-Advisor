@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pathlib import Path
 import json
+import re
 
 router = APIRouter()
 
@@ -15,6 +16,16 @@ ANALYSIS_DIR = Path("uploads/analysis")
 
 # In-memory storage (shared with upload route)
 from routes.upload import latest_analysis
+
+
+FILE_ID_PATTERN = re.compile(r"^[a-fA-F0-9-]{36}$")
+
+
+def public_analysis_payload(analysis: dict) -> dict:
+    """Return analysis data without backend-only resume evidence."""
+    public_analysis = dict(analysis)
+    public_analysis.pop("parsed_resume", None)
+    return public_analysis
 
 
 @router.get("/analysis")
@@ -29,7 +40,7 @@ async def get_analysis(file_id: str = None):
     try:
         if file_id:
             # Load specific analysis from file
-            analysis_path = ANALYSIS_DIR / f"{file_id}.json"
+            analysis_path = _safe_analysis_path(file_id)
             
             if not analysis_path.exists():
                 raise HTTPException(
@@ -53,16 +64,16 @@ async def get_analysis(file_id: str = None):
             status_code=200,
             content={
                 "success": True,
-                "data": analysis
+                "data": public_analysis_payload(analysis)
             }
         )
     
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving analysis: {str(e)}"
+            detail="Error retrieving analysis. Please try again."
         )
 
 
@@ -99,7 +110,7 @@ async def get_analysis_summary():
 async def delete_analysis(file_id: str):
     """Delete a specific analysis"""
     
-    analysis_path = ANALYSIS_DIR / f"{file_id}.json"
+    analysis_path = _safe_analysis_path(file_id)
     
     if not analysis_path.exists():
         raise HTTPException(
@@ -121,8 +132,21 @@ async def delete_analysis(file_id: str):
                 "message": f"Analysis {file_id} deleted successfully"
             }
         )
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=f"Error deleting analysis: {str(e)}"
+            detail="Error deleting analysis. Please try again."
         )
+
+
+def _safe_analysis_path(file_id: str) -> Path:
+    if not FILE_ID_PATTERN.fullmatch(file_id or ""):
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+
+    base = ANALYSIS_DIR.resolve()
+    candidate = (base / f"{file_id}.json").resolve()
+    if candidate.parent != base:
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+    return candidate

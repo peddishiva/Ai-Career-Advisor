@@ -41,6 +41,7 @@ class JobDescriptionValidationConfig:
 JOB_DESCRIPTION_DOCUMENT_TYPE = "job_description"
 NOT_JOB_DESCRIPTION_DOCUMENT_TYPE = "not_job_description"
 UNSECTIONED_JD_STRUCTURE_SCORE = 0.22
+MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES = 5 * 1024 * 1024
 
 
 JOB_SECTION_ALIASES: Dict[str, Tuple[str, ...]] = {
@@ -48,6 +49,8 @@ JOB_SECTION_ALIASES: Dict[str, Tuple[str, ...]] = {
         "about the role",
         "role overview",
         "job overview",
+        "job description",
+        "description",
         "overview",
         "summary",
     ),
@@ -55,11 +58,15 @@ JOB_SECTION_ALIASES: Dict[str, Tuple[str, ...]] = {
         "responsibilities",
         "role responsibilities",
         "key responsibilities",
+        "key job responsibilities",
         "what you will do",
         "what youll do",
         "what you'll do",
         "what you do",
+        "what youll be doing",
+        "what you'll be doing",
         "day to day",
+        "a day in the life",
     ),
     "required_qualifications": (
         "requirements",
@@ -122,6 +129,12 @@ JOB_SECTION_ALIASES: Dict[str, Tuple[str, ...]] = {
         "compensation",
         "salary",
     ),
+    "job_details": (
+        "job details",
+        "job detail",
+        "role details",
+        "position details",
+    ),
     "about_company": (
         "about us",
         "about the company",
@@ -151,12 +164,14 @@ PREFERRED_SECTION_NAMES: Set[str] = {
 NON_REQUIREMENT_SECTION_NAMES: Set[str] = {
     "overview",
     "responsibilities",
+    "job_details",
     "benefits",
     "about_company",
     "application",
 }
 
 JOB_STRUCTURE_SECTION_NAMES: Set[str] = {
+    "overview",
     "responsibilities",
     "required_qualifications",
     "preferred_qualifications",
@@ -166,6 +181,7 @@ JOB_STRUCTURE_SECTION_NAMES: Set[str] = {
     "experience",
     "education",
     "certifications",
+    "job_details",
 }
 
 
@@ -270,6 +286,33 @@ CERTIFICATION_KEYWORDS = (
     "ckad",
 )
 
+ELIGIBILITY_CONTEXT_MARKERS = (
+    "pursu",
+    "clear",
+    "enroll",
+    "register",
+    "member",
+    "membership",
+    "eligible",
+    "trainee",
+    "articleship",
+    "industrial training",
+    "professional qualification",
+    "professional program",
+    "professional body",
+    "license",
+    "licensed",
+    "qualification",
+)
+
+ELIGIBILITY_STATUS_PATTERNS = (
+    r"\bmust\b.{0,100}\b(?:pursu\w*|clear\w*|enroll\w*|register\w*|member\w*|eligible|trainee\w*|articleship|industrial\s+training)\b",
+    r"\b(?:currently|actively|active|registered|licensed|eligible|mandatory|only(?:\s+candidates?)?)\b.{0,100}\b(?:pursu\w*|clear\w*|enroll\w*|register\w*|member\w*|trainee\w*|articleship|industrial\s+training|professional\s+(?:qualification|program|body)|license|qualification)\b",
+    r"\b(?:pursu\w*|clear\w*|enroll\w*|register\w*|member\w*|eligible|trainee\w*|articleship|industrial\s+training|professional\s+(?:qualification|program|body)|license|qualification)\b.{0,100}\b(?:required|preferred|preferably|must|mandatory)\b",
+    r"\b(?:must|candidate\s+must)\b.{0,80}\b(?:hold|have)\b.{0,80}\bprofessional\s+qualification\b",
+    r"\brequired\s+professional\s+qualification\b",
+)
+
 NEGATIVE_DOCUMENT_PATTERNS = (
     r"\binstallation\s+guide\b",
     r"\bsetup\s+guide\b",
@@ -282,7 +325,7 @@ NEGATIVE_DOCUMENT_PATTERNS = (
     r"\btroubleshooting\b",
     r"\brelease\s+notes\b",
     r"\bproduct\s+documentation\b",
-    r"\barticle\b",
+    r"\b(?:blog\s+article|news\s+article|this\s+article|article\s+discusses|article\s+explains)\b",
     r"\bblog\b",
     r"\bchapter\b",
     r"\bstep[-\s]by[-\s]step\b",

@@ -82,7 +82,6 @@ export default function Home() {
       console.log('Response status:', response.status);
       
       const data = await response.json();
-      console.log('Response data:', data);
 
       if (!response.ok) {
         const validationMessage = data.validation?.message || data.message;
@@ -100,6 +99,12 @@ export default function Home() {
       // Store analysis data in localStorage for the analysis page
       if (data.analysis) {
         localStorage.setItem('resumeAnalysis', JSON.stringify(data.analysis));
+        if (data.file_id) {
+          localStorage.setItem('resumeFileId', data.file_id);
+        } else {
+          localStorage.removeItem('resumeFileId');
+        }
+        localStorage.removeItem('jobMatchResult');
         console.log('Analysis data stored in localStorage');
       }
       

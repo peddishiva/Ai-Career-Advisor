@@ -71,6 +71,21 @@ class JobMatchService:
         project_alignment = self._align_projects(resume_data, job_description_data)
         education_alignment = self._align_education(resume_data, job_description_data)
         certification_alignment = self._align_certifications(resume_data, job_description_data)
+        eligibility_alignment = self._align_eligibility(resume_data, job_description_data)
+        qualification_alignment = self._align_requirement_group(
+            resume_data,
+            job_description_data,
+            "required_capability_requirements",
+            "preferred_capability_requirements",
+            "required capability or domain knowledge",
+        )
+        availability_alignment = self._align_requirement_group(
+            resume_data,
+            job_description_data,
+            "required_availability_requirements",
+            "preferred_availability_requirements",
+            "availability or duration",
+        )
         responsibility_alignment = self._align_responsibilities(resume_data, job_description_data)
 
         component_scores = {
@@ -79,7 +94,7 @@ class JobMatchService:
             "experience": experience_alignment["score"],
             "projects": project_alignment["score"],
             "education": education_alignment["score"],
-            "certifications": certification_alignment["score"],
+            "certifications": self._credential_component_score(certification_alignment, eligibility_alignment),
             "responsibilities": responsibility_alignment["score"],
         }
         weighted_breakdown = self._weighted_breakdown(component_scores)
@@ -94,10 +109,16 @@ class JobMatchService:
             experience_alignment,
             education_alignment,
             certification_alignment,
+            eligibility_alignment,
+            qualification_alignment,
+            availability_alignment,
         )
         non_critical_gaps = self._non_critical_gaps(
             preferred_skill_matches,
             certification_alignment,
+            eligibility_alignment,
+            qualification_alignment,
+            availability_alignment,
             responsibility_alignment,
         )
 
@@ -115,6 +136,9 @@ class JobMatchService:
             "project_alignment": project_alignment,
             "education_alignment": education_alignment,
             "certification_alignment": certification_alignment,
+            "eligibility_alignment": eligibility_alignment,
+            "qualification_alignment": qualification_alignment,
+            "availability_alignment": availability_alignment,
             "responsibility_alignment": responsibility_alignment,
             "critical_gaps": critical_gaps,
             "non_critical_gaps": non_critical_gaps,
@@ -124,6 +148,9 @@ class JobMatchService:
                 experience_alignment,
                 education_alignment,
                 certification_alignment,
+                eligibility_alignment,
+                qualification_alignment,
+                availability_alignment,
             ),
             "resume_alignment": self._resume_alignment(
                 required_skill_matches,
@@ -132,6 +159,7 @@ class JobMatchService:
                 project_alignment,
                 education_alignment,
                 certification_alignment,
+                eligibility_alignment,
                 responsibility_alignment,
             ),
         }
@@ -446,6 +474,211 @@ class JobMatchService:
         status = "matched" if results and all(item["status"] == "matched" for item in results) else "missing"
         return {"score": score, "requirements": results, "status": status, "reason": "Certification alignment uses parsed resume certifications only."}
 
+    def _align_eligibility(self, resume_data: Dict[str, Any], jd_data: Dict[str, Any]) -> Dict[str, Any]:
+        required = self._eligibility_requirements(jd_data, "required")
+        preferred = self._eligibility_requirements(jd_data, "preferred")
+        requirements = required + preferred
+        if not requirements:
+            return {
+                "score": 0,
+                "requirements": [],
+                "status": "not_required",
+                "reason": "No explicit professional qualification or eligibility requirement was provided.",
+            }
+
+        resume_evidence = self._eligibility_resume_evidence(resume_data)
+        results = [self._match_single_eligibility_requirement(requirement, resume_evidence) for requirement in requirements]
+        score = int(round(sum(item["score"] for item in results) / len(results))) if results else 0
+        status = "matched" if results and all(item["status"] == "matched" for item in results) else "needs_review"
+        if any(item["status"] in {"missing", "insufficient_evidence"} for item in results):
+            status = "missing"
+        return {
+            "score": score,
+            "requirements": results,
+            "status": status,
+            "reason": "Professional qualification alignment uses explicit resume evidence outside project descriptions.",
+        }
+
+    def _align_requirement_group(
+        self,
+        resume_data: Dict[str, Any],
+        jd_data: Dict[str, Any],
+        required_key: str,
+        preferred_key: str,
+        label: str,
+    ) -> Dict[str, Any]:
+        required = list(jd_data.get(required_key) or [])
+        preferred = list(jd_data.get(preferred_key) or [])
+        requirements = required + preferred
+        if not requirements:
+            return {
+                "score": 0,
+                "requirements": [],
+                "status": "not_required",
+                "reason": f"No explicit {label} requirement was provided.",
+            }
+
+        resume_evidence = self._eligibility_resume_evidence(resume_data)
+        results = [self._match_single_requirement(item, resume_evidence) for item in requirements]
+        score = int(round(sum(item["score"] for item in results) / len(results))) if results else 0
+        status = "matched" if results and all(item["status"] == "matched" for item in results) else "needs_review"
+        if any(item["status"] in {"missing", "insufficient_evidence"} for item in results):
+            status = "missing"
+        return {
+            "score": score,
+            "requirements": results,
+            "status": status,
+            "reason": f"{label.title()} alignment uses explicit JD requirements and parsed resume evidence only.",
+        }
+
+    def _match_single_requirement(
+        self,
+        requirement: Dict[str, Any],
+        resume_evidence: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        requirement_text = requirement.get("text", requirement.get("raw_text", ""))
+        requirement_terms = self._eligibility_terms(requirement_text)
+        matched_evidence = [
+            evidence
+            for evidence in resume_evidence
+            if self._eligibility_evidence_matches(requirement_terms, evidence["text"])
+        ]
+        requirement_type = requirement.get("requirement_type", "required")
+        if matched_evidence:
+            status = "matched"
+            reason = f"Resume evidence supports the requirement: {requirement_text}"
+        elif resume_evidence:
+            status = "insufficient_evidence"
+            reason = f"No qualifying resume evidence was found for: {requirement_text}"
+        else:
+            status = "missing"
+            reason = f"No resume evidence was found for: {requirement_text}"
+
+        return {
+            "requirement": requirement_text,
+            "category": requirement.get("category"),
+            "status": status,
+            "importance": "critical" if requirement_type == "required" else "non_critical",
+            "score": 100 if status == "matched" else 0,
+            "evidence": matched_evidence,
+            "resume_evidence": matched_evidence,
+            "reason": reason,
+            "requirement_type": requirement_type,
+            "source_section": requirement.get("source_section"),
+        }
+
+    def _eligibility_requirements(self, jd_data: Dict[str, Any], requirement_type: str) -> List[Dict[str, Any]]:
+        key = f"{requirement_type}_eligibility_requirements"
+        if key in jd_data:
+            return list(jd_data.get(key) or [])
+        return [
+            item
+            for item in jd_data.get(f"{requirement_type}_qualifications", [])
+            if item.get("category") == "eligibility"
+        ]
+
+    def _eligibility_resume_evidence(self, resume_data: Dict[str, Any]) -> List[Dict[str, str]]:
+        evidence: List[Dict[str, str]] = []
+        for skill in resume_data.get("skills", []) or []:
+            if skill:
+                evidence.append({"source": "skills", "text": str(skill)})
+        for certification in resume_data.get("certifications", []) or []:
+            name = certification.get("name", "") if isinstance(certification, dict) else str(certification)
+            if name:
+                evidence.append({"source": "certifications", "text": str(name)})
+        for education in resume_data.get("education", []) or []:
+            if not isinstance(education, dict):
+                continue
+            text = " ".join(str(education.get(field, "")) for field in ("degree", "field", "institution"))
+            if text.strip():
+                evidence.append({"source": "education", "text": text.strip()})
+        sections = resume_data.get("sections", {}) or {}
+        for source, section_name in (("education", "education_text"), ("certifications", "certifications_text")):
+            section_text = sections.get(section_name, "")
+            if section_text and not any(item["source"] == source and item["text"] == section_text for item in evidence):
+                evidence.append({"source": source, "text": section_text})
+        for experience in resume_data.get("experience", []) or []:
+            if not isinstance(experience, dict):
+                continue
+            text = " ".join(str(experience.get(field, "")) for field in ("title", "company", "date", "description"))
+            if text.strip():
+                evidence.append({"source": "experience", "text": text.strip()})
+        return evidence
+
+    def _match_single_eligibility_requirement(
+        self,
+        requirement: Dict[str, Any],
+        resume_evidence: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        requirement_text = requirement.get("text", requirement.get("raw_text", ""))
+        evidence_terms = self._eligibility_terms(requirement_text)
+        matched_evidence = []
+        for evidence in resume_evidence:
+            if self._eligibility_evidence_matches(evidence_terms, evidence["text"]):
+                matched_evidence.append(evidence)
+
+        requirement_type = requirement.get("requirement_type", "required")
+        if matched_evidence:
+            status = "matched"
+            reason = f"Resume evidence supports the eligibility requirement: {requirement_text}"
+        elif resume_evidence:
+            status = "insufficient_evidence"
+            reason = f"No qualifying resume evidence was found for: {requirement_text}"
+        else:
+            status = "missing"
+            reason = f"No resume evidence was found for: {requirement_text}"
+
+        return {
+            "requirement": requirement_text,
+            "status": status,
+            "importance": "critical" if requirement_type == "required" else "non_critical",
+            "score": 100 if status == "matched" else 0,
+            "evidence": matched_evidence,
+            "resume_evidence": matched_evidence,
+            "reason": reason,
+            "requirement_type": requirement_type,
+            "source_section": requirement.get("source_section"),
+        }
+
+    def _eligibility_terms(self, requirement: str) -> Set[str]:
+        terms = {
+            token
+            for token in re.findall(r"[a-z0-9+#]+", (requirement or "").lower())
+            if len(token) > 1 and token not in TEXT_STOP_WORDS
+        }
+        return terms.difference({
+            "must", "have", "has", "been", "being", "candidate", "candidates", "only",
+            "currently", "active", "actively", "required", "preferred", "mandatory", "eligible",
+            "professional", "qualification", "qualifications", "program", "status", "relevant",
+        })
+
+    def _eligibility_evidence_matches(self, requirement_terms: Set[str], evidence_text: str) -> bool:
+        if not requirement_terms or not evidence_text:
+            return False
+        evidence_terms = {
+            token
+            for token in re.findall(r"[a-z0-9+#]+", evidence_text.lower())
+            if len(token) > 1 and token not in TEXT_STOP_WORDS
+        }
+        overlap = requirement_terms.intersection(evidence_terms)
+        if not overlap:
+            return False
+        if len(requirement_terms) == 1:
+            return len(overlap) == 1
+        return len(overlap) >= max(2, int(round(len(requirement_terms) * 0.5)))
+
+    def _credential_component_score(
+        self,
+        certification_alignment: Dict[str, Any],
+        eligibility_alignment: Dict[str, Any],
+    ) -> int:
+        scores = [
+            item.get("score", 0)
+            for alignment in (certification_alignment, eligibility_alignment)
+            for item in alignment.get("requirements", [])
+        ]
+        return int(round(sum(scores) / len(scores))) if scores else certification_alignment.get("score", 0)
+
     def _align_responsibilities(self, resume_data: Dict[str, Any], jd_data: Dict[str, Any]) -> Dict[str, Any]:
         responsibilities = jd_data.get("responsibilities", [])
         if not responsibilities:
@@ -534,6 +767,9 @@ class JobMatchService:
         experience_alignment: Dict[str, Any],
         education_alignment: Dict[str, Any],
         certification_alignment: Dict[str, Any],
+        eligibility_alignment: Dict[str, Any],
+        qualification_alignment: Dict[str, Any],
+        availability_alignment: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         gaps = []
         for item in required_skill_matches:
@@ -548,12 +784,34 @@ class JobMatchService:
         for requirement in certification_alignment.get("requirements", []):
             if requirement.get("required") and requirement.get("status") == "missing":
                 gaps.append({"type": "certification", "requirement": requirement.get("requirement"), "reason": requirement.get("reason")})
+        for requirement in eligibility_alignment.get("requirements", []):
+            if requirement.get("importance") == "critical" and requirement.get("status") in {"missing", "insufficient_evidence"}:
+                gaps.append(
+                    {
+                        "type": "eligibility",
+                        "requirement": requirement.get("requirement"),
+                        "reason": requirement.get("reason"),
+                    }
+                )
+        for alignment in (qualification_alignment, availability_alignment):
+            for requirement in alignment.get("requirements", []):
+                if requirement.get("importance") == "critical" and requirement.get("status") in {"missing", "insufficient_evidence"}:
+                    gaps.append(
+                        {
+                            "type": requirement.get("category") or "required_qualification",
+                            "requirement": requirement.get("requirement"),
+                            "reason": requirement.get("reason"),
+                        }
+                    )
         return gaps
 
     def _non_critical_gaps(
         self,
         preferred_skill_matches: List[Dict[str, Any]],
         certification_alignment: Dict[str, Any],
+        eligibility_alignment: Dict[str, Any],
+        qualification_alignment: Dict[str, Any],
+        availability_alignment: Dict[str, Any],
         responsibility_alignment: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         gaps = []
@@ -563,6 +821,25 @@ class JobMatchService:
         for requirement in certification_alignment.get("requirements", []):
             if not requirement.get("required") and requirement.get("status") == "missing":
                 gaps.append({"type": "preferred_certification", "requirement": requirement.get("requirement"), "reason": requirement.get("reason")})
+        for requirement in eligibility_alignment.get("requirements", []):
+            if requirement.get("importance") == "non_critical" and requirement.get("status") in {"missing", "insufficient_evidence"}:
+                gaps.append(
+                    {
+                        "type": "preferred_eligibility",
+                        "requirement": requirement.get("requirement"),
+                        "reason": requirement.get("reason"),
+                    }
+                )
+        for alignment in (qualification_alignment, availability_alignment):
+            for requirement in alignment.get("requirements", []):
+                if requirement.get("importance") == "non_critical" and requirement.get("status") in {"missing", "insufficient_evidence"}:
+                    gaps.append(
+                        {
+                            "type": f"preferred_{requirement.get('category') or 'qualification'}",
+                            "requirement": requirement.get("requirement"),
+                            "reason": requirement.get("reason"),
+                        }
+                    )
         for item in responsibility_alignment.get("items", []):
             if item.get("status") == "missing":
                 gaps.append({"type": "responsibility", "requirement": item.get("requirement"), "reason": item.get("reason")})
@@ -575,6 +852,9 @@ class JobMatchService:
         experience_alignment: Dict[str, Any],
         education_alignment: Dict[str, Any],
         certification_alignment: Dict[str, Any],
+        eligibility_alignment: Dict[str, Any],
+        qualification_alignment: Dict[str, Any],
+        availability_alignment: Dict[str, Any],
     ) -> List[Dict[str, str]]:
         recommendations = []
         for item in required_skill_matches:
@@ -616,6 +896,26 @@ class JobMatchService:
                         "description": requirement.get("reason", "Required certification evidence is missing."),
                     }
                 )
+        for requirement in eligibility_alignment.get("requirements", []):
+            if requirement.get("status") in {"missing", "insufficient_evidence"}:
+                recommendations.append(
+                    {
+                        "title": "Address professional eligibility evidence",
+                        "description": requirement.get("reason", "The JD qualification or eligibility requirement is not supported by the resume."),
+                    }
+                )
+        for alignment, title in (
+            (qualification_alignment, "Address required capability or domain knowledge evidence"),
+            (availability_alignment, "Clarify availability or duration evidence"),
+        ):
+            for requirement in alignment.get("requirements", []):
+                if requirement.get("status") in {"missing", "insufficient_evidence"}:
+                    recommendations.append(
+                        {
+                            "title": title,
+                            "description": requirement.get("reason", "The requirement is not supported by parsed resume evidence."),
+                        }
+                    )
         for item in preferred_skill_matches:
             if item["status"] == "missing" and len(recommendations) < RECOMMENDATION_LIMIT:
                 recommendations.append(
@@ -634,6 +934,7 @@ class JobMatchService:
         project_alignment: Dict[str, Any],
         education_alignment: Dict[str, Any],
         certification_alignment: Dict[str, Any],
+        eligibility_alignment: Dict[str, Any],
         responsibility_alignment: Dict[str, Any],
     ) -> List[Dict[str, str]]:
         alignment = []
@@ -648,6 +949,8 @@ class JobMatchService:
             alignment.append({"type": "education", "requirement": "education", "reason": education_alignment.get("reason", "")})
         if certification_alignment.get("status") == "matched":
             alignment.append({"type": "certifications", "requirement": "certification", "reason": certification_alignment.get("reason", "")})
+        if eligibility_alignment.get("status") == "matched":
+            alignment.append({"type": "eligibility", "requirement": "professional qualification", "reason": eligibility_alignment.get("reason", "")})
         if responsibility_alignment.get("score", 0) > 0:
             alignment.append({"type": "responsibilities", "requirement": "responsibilities", "reason": responsibility_alignment.get("reason", "")})
         return alignment

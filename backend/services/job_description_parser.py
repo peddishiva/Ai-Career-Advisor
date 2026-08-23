@@ -10,6 +10,8 @@ from config.job_description_config import (
     CERTIFICATION_KEYWORDS,
     DEGREE_FIELD_KEYWORDS,
     EMPLOYMENT_TYPES,
+    ELIGIBILITY_CONTEXT_MARKERS,
+    ELIGIBILITY_STATUS_PATTERNS,
     JOB_SECTION_ALIASES,
     JOB_TITLE_TERMS,
     NON_REQUIREMENT_SECTION_NAMES,
@@ -49,7 +51,7 @@ class JobDescriptionParser:
         )
         self.degree_pattern = re.compile(
             r"\b(?:bachelor(?:'s)?|master(?:'s)?|ph\.?d\.?|doctorate|"
-            r"b\.?\s?s\.?|m\.?\s?s\.?|b\.?\s?tech|m\.?\s?tech|mba|associate(?:'s)?|degree)\b",
+            r"b\.?\s?tech|m\.?\s?tech|b\.?\s?s|m\.?\s?s|mba|associate(?:'s)?|degree)(?=\W|$)",
             re.I,
         )
         self.certification_pattern = re.compile("|".join(re.escape(keyword) for keyword in CERTIFICATION_KEYWORDS), re.I)
@@ -72,6 +74,28 @@ class JobDescriptionParser:
         """Parse already-extracted JD text into deterministic structured fields."""
         sections = self._segment_sections(text)
         required_qualifications, preferred_qualifications = self._extract_qualifications(sections)
+        required_eligibility_requirements = [
+            item for item in required_qualifications if item["category"] == "eligibility"
+        ]
+        preferred_eligibility_requirements = [
+            item for item in preferred_qualifications if item["category"] == "eligibility"
+        ]
+        required_availability_requirements = [
+            self._availability_item(item)
+            for item in required_qualifications
+            if self._is_availability_requirement(item["text"])
+        ]
+        preferred_availability_requirements = [
+            self._availability_item(item)
+            for item in preferred_qualifications
+            if self._is_availability_requirement(item["text"])
+        ]
+        required_capability_requirements = [
+            item for item in required_qualifications if item["category"] in {"domain_knowledge", "capability"}
+        ]
+        preferred_capability_requirements = [
+            item for item in preferred_qualifications if item["category"] in {"domain_knowledge", "capability"}
+        ]
 
         return {
             "job_title": self._extract_job_title(text, sections),
@@ -82,6 +106,12 @@ class JobDescriptionParser:
             "preferred_skills": self._extract_skills(sections, required=False),
             "required_qualifications": required_qualifications,
             "preferred_qualifications": preferred_qualifications,
+            "required_eligibility_requirements": required_eligibility_requirements,
+            "preferred_eligibility_requirements": preferred_eligibility_requirements,
+            "required_availability_requirements": required_availability_requirements,
+            "preferred_availability_requirements": preferred_availability_requirements,
+            "required_capability_requirements": required_capability_requirements,
+            "preferred_capability_requirements": preferred_capability_requirements,
             "experience_requirements": self._extract_experience_requirements(sections),
             "education_requirements": self._extract_education_requirements(sections),
             "certifications": self._extract_certifications(sections),
@@ -169,14 +199,14 @@ class JobDescriptionParser:
     def _extract_responsibilities(self, sections: Dict[str, str]) -> List[str]:
         responsibilities = []
         for _, line in self._iter_section_lines(sections, ["responsibilities"]):
-            if self._is_noise_line(line):
+            if self._is_noise_line(line) or self._is_requirement_line(line):
                 continue
-            responsibilities.append(line)
+            responsibilities.extend(self._responsibility_units(line))
         for section, line in self._iter_all_section_lines(sections):
             if section == "responsibilities" or self._is_noise_line(line):
                 continue
             if self._has_responsibility_language(line) and self._requirement_type(section, line) is None:
-                responsibilities.append(line)
+                responsibilities.extend(self._responsibility_units(line))
         return dedupe_preserve_order(responsibilities, key=requirement_key)[: PARSING_LIMITS["max_responsibilities"]]
 
     def _extract_qualifications(self, sections: Dict[str, str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -188,10 +218,31 @@ class JobDescriptionParser:
                 continue
 
             requirement_type = self._requirement_type(section, line)
-            if requirement_type == "preferred":
-                preferred_items.append(self._qualification_item(line, section, "preferred"))
-            elif requirement_type == "required":
-                required_items.append(self._qualification_item(line, section, "required"))
+            if requirement_type in {"required", "preferred"}:
+                for fragment in self._qualification_fragments(line):
+                    if self._is_exclusion_fragment(fragment):
+                        continue
+                    item = self._qualification_item(fragment, section, requirement_type)
+                    if requirement_type == "preferred":
+                        preferred_items.append(item)
+                    else:
+                        required_items.append(item)
+
+        for section, line in self._iter_section_lines(
+            sections,
+            ["overview", "responsibilities", "job_details", "header"],
+        ):
+            for fragment in self._qualification_fragments(line):
+                if self._is_exclusion_fragment(fragment) or self._is_promotional_line(fragment) or not self._has_explicit_eligibility_language(fragment):
+                    continue
+                requirement_type = self._requirement_type(section, fragment)
+                if requirement_type is None:
+                    requirement_type = "preferred" if re.search(r"\b(?:preferred|preferably)\b", fragment, re.I) else "required"
+                item = self._qualification_item(fragment, section, requirement_type)
+                if requirement_type == "preferred":
+                    preferred_items.append(item)
+                else:
+                    required_items.append(item)
 
         required_items = dedupe_preserve_order(required_items, key=lambda item: requirement_key(item["text"]))
         preferred_items = dedupe_preserve_order(preferred_items, key=lambda item: requirement_key(item["text"]))
@@ -203,7 +254,7 @@ class JobDescriptionParser:
     def _extract_skills(self, sections: Dict[str, str], required: bool) -> List[str]:
         skills: List[str] = []
         for section, line in self._iter_all_section_lines(sections):
-            if self.degree_pattern.search(line) or self.certification_pattern.search(line):
+            if self._is_education_requirement(line) or self.certification_pattern.search(line):
                 continue
             requirement_type = self._requirement_type(section, line)
             if required and requirement_type != "required":
@@ -243,7 +294,7 @@ class JobDescriptionParser:
     def _extract_education_requirements(self, sections: Dict[str, str]) -> List[Dict[str, Any]]:
         requirements: List[Dict[str, Any]] = []
         for section, line in self._iter_all_section_lines(sections):
-            if self._is_noise_line(line) or not self.degree_pattern.search(line):
+            if self._is_noise_line(line) or not self._is_education_requirement(line):
                 continue
             requirement_type = self._requirement_type(section, line) or "required"
             requirements.append(
@@ -264,6 +315,8 @@ class JobDescriptionParser:
         certifications: List[Dict[str, Any]] = []
         for section, line in self._iter_all_section_lines(sections):
             if self._is_noise_line(line):
+                continue
+            if self._requirement_category(line) == "eligibility":
                 continue
             if section != "certifications" and not self.certification_pattern.search(line):
                 continue
@@ -294,7 +347,116 @@ class JobDescriptionParser:
             "text": line,
             "source_section": section,
             "requirement_type": requirement_type,
+            "category": self._requirement_category(line),
         }
+
+    def _requirement_category(self, line: str) -> str:
+        """Classify explicit qualification evidence without treating soft text as eligibility."""
+        if self._is_education_requirement(line):
+            return "education"
+        if self._has_explicit_eligibility_language(line):
+            return "eligibility"
+        if self._is_availability_requirement(line):
+            return "availability"
+        if self._is_domain_knowledge_requirement(line):
+            return "domain_knowledge"
+        if self.certification_pattern.search(line):
+            return "certification"
+        return "general"
+
+    def _has_explicit_eligibility_language(self, line: str) -> bool:
+        lowered = line.lower()
+        if not any(marker in lowered for marker in ELIGIBILITY_CONTEXT_MARKERS):
+            return False
+        if any(re.search(pattern, line, re.I) for pattern in ELIGIBILITY_STATUS_PATTERNS):
+            return True
+        return bool(
+            re.search(
+                r"\b(?:pursu\w*|clear\w*|eligible|registered|licensed|active|only)\b"
+                r".{0,80}\b(?:ca|ipcc|articleship|industrial\s+training|professional\s+qualification|"
+                r"professional\s+body|license|membership|member|trainee)\b",
+                line,
+                re.I,
+            )
+        )
+
+    def _is_education_requirement(self, line: str) -> bool:
+        if not self.degree_pattern.search(line):
+            return False
+        # Common office-product phrases use degree-like abbreviations but are skills.
+        return not bool(re.search(r"\b(?:ms|m\.s\.?)\s+(?:excel|word|office|powerpoint|access)\b", line, re.I))
+
+    def _is_availability_requirement(self, line: str) -> bool:
+        return bool(
+            re.search(
+                r"\b(?:available|availability|commit(?:ted|ment)?|intern|training)\b"
+                r".{0,100}\b\d+\s*(?:-|–|to)\s*\d+\s*(?:months?|years?)\b",
+                line,
+                re.I,
+            )
+            or re.search(
+                r"\b\d+\s*(?:-|–|to)\s*\d+\s*(?:months?|years?)\b"
+                r".{0,100}\b(?:available|availability|intern|training|articleship)\b",
+                line,
+                re.I,
+            )
+        )
+
+    def _is_domain_knowledge_requirement(self, line: str) -> bool:
+        return bool(
+            re.search(r"\b(?:knowledge|understanding|familiarity|background)\b", line, re.I)
+            and re.search(r"\b(?:accounting|finance|financial|audit|tax|banking)\b", line, re.I)
+        )
+
+    def _qualification_fragments(self, line: str) -> List[str]:
+        fragments = re.split(r"(?<=[.!?])\s+|;\s*", line.strip())
+        result: List[str] = []
+        for fragment in fragments:
+            fragment = fragment.strip()
+            if not fragment:
+                continue
+            parts = re.split(
+                r",\s+(?=(?:cleared|pursuing|available|possess|good|strong|attention|proficiency|"
+                r"eligible|registered|licensed|active|must\b))",
+                fragment,
+                flags=re.I,
+            )
+            result.extend(part.strip() for part in parts if part.strip())
+        return result or [line]
+
+    def _is_exclusion_fragment(self, line: str) -> bool:
+        return bool(re.search(r"\b(?:non[-\s]|should not apply|have not yet|already completed)\b", line, re.I))
+
+    def _availability_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        availability_item = dict(item)
+        availability_item["category"] = "availability"
+        return availability_item
+
+    def _is_requirement_line(self, line: str) -> bool:
+        return (
+            self._requirement_type("responsibilities", line) is not None
+            or self._requirement_category(line) in {"education", "eligibility", "availability", "domain_knowledge", "certification"}
+        )
+
+    def _responsibility_units(self, line: str) -> List[str]:
+        cleaned_line = re.sub(r"\([^)]*\)", "", line)
+        units = re.split(r"(?<=[.!?])\s+|;\s*", cleaned_line)
+        return [
+            unit.strip()
+            for unit in units
+            if unit.strip() and not self._is_promotional_line(unit)
+        ]
+
+    def _is_promotional_line(self, line: str) -> bool:
+        return bool(
+            re.search(
+                r"\b(?:are you looking for|kick[- ]start|exciting and fast[- ]growing|"
+                r"one of the largest|if your answer|we(?:'|’)re hiring|we are hiring|"
+                r"are you\b|us-based multinational|headquartered|vision to build|started as an online)\b",
+                line,
+                re.I,
+            )
+        )
 
     def _iter_all_section_lines(self, sections: Dict[str, str]) -> Iterable[Tuple[str, str]]:
         for section, text in sections.items():

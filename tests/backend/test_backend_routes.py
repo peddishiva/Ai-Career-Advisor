@@ -25,7 +25,8 @@ class TestBackendRoutes(unittest.TestCase):
             'health': '/health',
             'upload': '/api/upload',
             'analysis': '/api/analysis',
-            'jobs': '/api/jobs/recommendations'
+            'jobs': '/api/jobs/recommendations',
+            'job_match': '/api/job-match',
         }
         for name, expected_path in expected_routes.items():
             self.assertIn(expected_path, paths, f"Route '{name}' at {expected_path} is not registered")

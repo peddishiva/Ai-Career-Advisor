@@ -101,6 +101,10 @@ Frontend runs on: `http://localhost:3000`
 3. Wait for the AI analysis to complete
 4. View your personalized career insights and recommendations
 
+### Deterministic Job Matching
+
+After a resume is analyzed, use the job matching flow to paste a job description or upload a PDF/DOCX/DOC job-description document. The matcher validates and parses the description locally, separates required from preferred qualifications, and reports evidence-based alignment, gaps, readiness, and recommendations. It does not call an LLM or external job API. Resume uploads and job-description documents are limited to 5 MB each.
+
 ## 🏗️ Project Structure
 
 ```

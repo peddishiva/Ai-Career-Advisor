@@ -270,6 +270,115 @@ Preferred Skills
 """
 
 
+FINANCIAL_ANALYST_RESUME = """
+Sample Technology Graduate
+sample.finance@example.com
+
+TECHNICAL SKILLS
+Python, SQL, Excel
+
+EDUCATION
+B.Tech Computer Science - Sample Institute
+"""
+
+
+CA_FINANCIAL_RESUME = """
+Sample Finance Trainee
+sample.ca@example.com
+
+PROFESSIONAL EXPERIENCE
+Finance Article Trainee - Sample Audit Firm 2024 - 2025
+- Completed industrial training and articleship assignments in accounting and audit.
+
+EDUCATION
+Pursuing CA, IPCC cleared - Professional Accounting Institute
+
+CERTIFICATIONS
+CA Intermediate
+"""
+
+
+ELIGIBILITY_JD = """
+Financial Analyst Intern
+Company: Example Finance
+
+Requirements
+- Must be pursuing CA.
+- Must have cleared IPCC.
+- Must have completed 12-18 months of industrial training/articleship.
+- Must have accounting and finance knowledge.
+"""
+
+
+LICENSE_JD = """
+Compliance Analyst
+Company: Example Compliance
+
+Requirements
+- Active professional license required.
+"""
+
+
+LICENSE_RESUME = """
+Sample Compliance Analyst
+
+CERTIFICATIONS
+Active Professional License
+"""
+
+
+MEMBERSHIP_JD = """
+Audit Associate
+Company: Example Audit
+
+Requirements
+- Must be a registered member of the relevant professional body.
+"""
+
+
+MEMBERSHIP_RESUME = """
+Sample Audit Associate
+
+CERTIFICATIONS
+Registered Member, Professional Accounting Body
+"""
+
+
+TRAINEE_JD = """
+Graduate Trainee
+Company: Example Group
+
+Requirements
+- Only candidates eligible for the company's graduate trainee program may apply.
+"""
+
+
+TRAINEE_RESUME = """
+Sample Graduate
+
+EXPERIENCE
+Graduate trainee program participant - Example Group 2024 - 2025
+"""
+
+
+PREFERRED_QUALIFICATION_JD = """
+Financial Analyst
+Company: Example Finance
+
+Preferred Qualifications
+- CA qualification preferred.
+"""
+
+
+PROJECT_ONLY_ELIGIBILITY_RESUME = """
+Sample Project Builder
+
+PROJECTS
+CA Eligibility Tracker
+- Built a project that tracks pursuing CA candidates and IPCC status.
+"""
+
+
 def parsed_resume(text: str) -> dict:
     return ResumeParser().parse_text(text)
 

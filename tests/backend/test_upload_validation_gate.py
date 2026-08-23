@@ -12,12 +12,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from docx import Document
+from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
 backend_path = Path(__file__).resolve().parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
 from routes import upload as upload_route
+from config.upload_config import MAX_RESUME_FILE_SIZE_BYTES
 
 
 class TestUploadValidationGate(unittest.TestCase):
@@ -132,6 +134,20 @@ class TestUploadValidationGate(unittest.TestCase):
         generate_analysis.assert_not_called()
         self.assertEqual([], list(self.analysis_dir.glob("*.json")))
         self.assertEqual({}, upload_route.latest_analysis)
+
+    def test_oversized_resume_is_rejected_before_analysis(self):
+        oversized = UploadFile(
+            file=BytesIO(b"x" * (MAX_RESUME_FILE_SIZE_BYTES + 1)),
+            filename="oversized_resume.pdf",
+        )
+
+        with self.assertRaises(HTTPException) as error:
+            self._call_upload(oversized)
+
+        self.assertEqual(413, error.exception.status_code)
+        self.assertIn("5MB", error.exception.detail)
+        self.assertEqual([], [path for path in self.upload_dir.iterdir() if path.is_file()])
+        self.assertEqual([], list(self.analysis_dir.glob("*.json")))
 
 
 if __name__ == "__main__":

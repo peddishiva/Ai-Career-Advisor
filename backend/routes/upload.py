@@ -6,7 +6,6 @@ Handles resume file uploads and triggers analysis
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from pathlib import Path
-import shutil
 import uuid
 import json
 from datetime import datetime
@@ -14,6 +13,7 @@ from datetime import datetime
 from services.parser_service import ResumeParser
 from services.analysis_service import AnalysisService
 from services.resume_validator import ResumeValidator
+from config.upload_config import MAX_RESUME_FILE_SIZE_BYTES, UPLOAD_COPY_CHUNK_BYTES
 
 router = APIRouter()
 
@@ -51,14 +51,20 @@ async def upload_resume(file: UploadFile = File(...)):
             detail="Invalid file type. Only PDF and DOCX files are supported."
         )
     
+    file_path = None
+
     try:
         # Generate unique filename
         file_id = str(uuid.uuid4())
         file_path = UPLOAD_DIR / f"{file_id}{file_ext}"
-        
+
+        upload_size = _uploaded_file_size(file)
+        if upload_size is not None and upload_size > MAX_RESUME_FILE_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail="Resume file is too large. Maximum file size is 5MB.")
+
         # Save uploaded file
         with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            _copy_upload_with_limit(file, buffer)
         
         # Extract text first, then validate before parsing/scoring.
         extracted_text = parser.extract_text(str(file_path))
@@ -89,11 +95,16 @@ async def upload_resume(file: UploadFile = File(...)):
             'upload_time': datetime.now().isoformat(),
             'file_type': file_ext
         }
+
+        parsed_resume_for_matching = dict(parsed_data)
+        parsed_resume_for_matching.pop('raw_text', None)
+        stored_analysis = dict(analysis)
+        stored_analysis['parsed_resume'] = parsed_resume_for_matching
         
         # Save analysis to file
         analysis_path = ANALYSIS_DIR / f"{file_id}.json"
         with analysis_path.open("w") as f:
-            json.dump(analysis, f, indent=2)
+            json.dump(stored_analysis, f, indent=2)
         
         # Store in memory for quick access
         latest_analysis['current'] = analysis
@@ -109,14 +120,18 @@ async def upload_resume(file: UploadFile = File(...)):
             }
         )
     
-    except Exception as e:
-        # Clean up file if analysis failed
-        if file_path.exists():
+    except HTTPException:
+        if file_path and file_path.exists():
             file_path.unlink()
-        
+        raise
+    except Exception:
+        # Clean up file if analysis failed
+        if file_path and file_path.exists():
+            file_path.unlink()
+
         raise HTTPException(
             status_code=500,
-            detail=f"Error processing resume: {str(e)}"
+            detail="Error processing resume. Please try again."
         )
     
     finally:
@@ -143,3 +158,35 @@ async def get_upload_status():
             "file_id": latest_analysis.get('file_id')
         }
     )
+
+
+def _uploaded_file_size(file: UploadFile):
+    size = getattr(file, "size", None)
+    if isinstance(size, int) and size >= 0:
+        return size
+
+    try:
+        current_position = file.file.tell()
+        file.file.seek(0, 2)
+        size = file.file.tell()
+        file.file.seek(current_position)
+        return size
+    except (AttributeError, OSError):
+        return None
+
+
+def _copy_upload_with_limit(file: UploadFile, destination) -> None:
+    try:
+        file.file.seek(0)
+    except (AttributeError, OSError):
+        pass
+
+    bytes_written = 0
+    while True:
+        chunk = file.file.read(UPLOAD_COPY_CHUNK_BYTES)
+        if not chunk:
+            break
+        bytes_written += len(chunk)
+        if bytes_written > MAX_RESUME_FILE_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail="Resume file is too large. Maximum file size is 5MB.")
+        destination.write(chunk)

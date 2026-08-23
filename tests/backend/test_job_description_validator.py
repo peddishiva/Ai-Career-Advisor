@@ -12,6 +12,7 @@ sys.path.insert(0, str(backend_path))
 sys.path.insert(0, str(tests_path))
 
 from job_description_fixtures import (
+    FINANCIAL_ANALYST_INTERN_JD,
     MESSY_INLINE_HEADER_JD,
     NEGATIVE_CONTROLS,
     NO_EXPLICIT_REQUIREMENT_HEADERS_JD,
@@ -47,6 +48,78 @@ class TestJobDescriptionValidator(unittest.TestCase):
 
     def test_realistic_job_descriptions_are_valid(self):
         for name, text in REALISTIC_JDS.items():
+            with self.subTest(name=name):
+                self.assert_valid_jd(text)
+
+    def test_financial_analyst_intern_real_world_structure_is_valid(self):
+        result = self.validator.validate_text(FINANCIAL_ANALYST_INTERN_JD)
+
+        self.assertTrue(result["valid"], result)
+        self.assertEqual(result["classification"], VALID_JOB_DESCRIPTION)
+        self.assertGreaterEqual(result["confidence"], self.validator.config.valid_threshold)
+        self.assertIn("job_id_metadata", result["signals"]["positive"])
+        self.assertIn("responsibilities", result["signals"]["sections"])
+        self.assertIn("required_qualifications", result["signals"]["sections"])
+        self.assertIn("preferred_qualifications", result["signals"]["sections"])
+        self.assertIn("job_details", result["signals"]["sections"])
+
+    def test_realistic_heading_variations_are_valid(self):
+        variations = {
+            "software_basic_preferred": """
+            Software Engineer
+            Job ID: SE-100
+
+            Responsibilities
+            - Build application services with the engineering team.
+
+            Basic Qualifications
+            - Must have Python and SQL experience.
+
+            Preferred Qualifications
+            - Docker experience preferred.
+            """,
+            "data_minimum_what_youll_do": """
+            Data Analyst
+            Company: Example Analytics
+
+            What You'll Do
+            - Analyze business datasets and create reporting dashboards.
+
+            Minimum Qualifications
+            - Required experience with SQL and Excel.
+
+            Preferred Qualifications
+            - Tableau experience preferred.
+            """,
+            "cloud_requirements_nice_to_have": """
+            Cloud Engineer
+            Employment Type: Full-time
+
+            Responsibilities
+            - Manage cloud infrastructure and deployment automation.
+
+            Requirements
+            - Must have AWS, Linux, and Docker experience.
+
+            Nice to Have
+            - Kubernetes experience would be a plus.
+            """,
+            "internship_about_role": """
+            Internship
+            Job ID: INT-42
+
+            About the Role
+            We are hiring an intern for a structured employment training program.
+
+            What You'll Do
+            - Collaborate with analysts and prepare weekly reports.
+
+            Basic Qualifications
+            - Candidate must be available for the internship period.
+            """,
+        }
+
+        for name, text in variations.items():
             with self.subTest(name=name):
                 self.assert_valid_jd(text)
 
