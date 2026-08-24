@@ -3,11 +3,15 @@ Analysis Route
 Provides analysis data for frontend display
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import JSONResponse
 from pathlib import Path
 import json
 import re
+from pydantic import BaseModel, ConfigDict
+
+from ai.contracts import AITaskType
+from services.ai_enrichment_service import AIEnrichmentError, AIEnrichmentService
 
 router = APIRouter()
 
@@ -19,6 +23,13 @@ from routes.upload import latest_analysis
 
 
 FILE_ID_PATTERN = re.compile(r"^[a-fA-F0-9-]{36}$")
+ai_enrichment_service = AIEnrichmentService()
+
+
+class AIAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task: AITaskType = AITaskType.RESUME_CAREER_GUIDANCE
 
 
 def public_analysis_payload(analysis: dict) -> dict:
@@ -104,6 +115,25 @@ async def get_analysis_summary():
             "summary": summary
         }
     )
+
+
+@router.post("/analysis/ai")
+async def generate_analysis_ai(
+    file_id: str | None = None,
+    request: AIAnalysisRequest | None = Body(default=None),
+):
+    """Generate explicit, optional AI enrichment for one resume analysis."""
+    selected_file_id = file_id or latest_analysis.get("file_id")
+    if not selected_file_id:
+        raise HTTPException(status_code=404, detail="No resume analysis is available.")
+    try:
+        task = request.task if request else AITaskType.RESUME_CAREER_GUIDANCE
+        if task not in {AITaskType.RESUME_EXPLANATION, AITaskType.RESUME_CAREER_GUIDANCE}:
+            raise AIEnrichmentError(422, "unsupported_ai_task", "This AI task is not supported for Resume Analysis.")
+        result = ai_enrichment_service.enrich_resume(selected_file_id, task)
+        return JSONResponse(status_code=200, content={"success": True, **result.model_dump(mode="json")})
+    except AIEnrichmentError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"success": False, "error": exc.error, "message": exc.message})
 
 
 @router.delete("/analysis/{file_id}")

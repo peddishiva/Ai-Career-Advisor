@@ -63,14 +63,32 @@ class Citation(ContractModel):
     chunk_id: Optional[str] = Field(default=None, max_length=160)
 
 
+class KnowledgeReference(ContractModel):
+    """Minimal retrieved knowledge plus provenance safe to send to a provider."""
+
+    knowledge_id: str = Field(pattern=r"^[A-Z][A-Z0-9-]{4,100}$")
+    title: str = Field(min_length=1, max_length=240)
+    category: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=4_000)
+    source_id: str = Field(pattern=r"^[A-Z][A-Z0-9-]{2,80}$")
+    source_title: str = Field(min_length=1, max_length=240)
+    publisher: str = Field(min_length=1, max_length=200)
+    url: Optional[str] = Field(default=None, max_length=1_000)
+    source_version: str = Field(min_length=1, max_length=120)
+    knowledge_version: str = Field(min_length=1, max_length=120)
+    trust_level: str = Field(min_length=1, max_length=20)
+
+
 class AIInsight(ContractModel):
     text: str = Field(min_length=1, max_length=2_000)
     evidence_reference_ids: List[str] = Field(default_factory=list)
+    knowledge_reference_ids: List[str] = Field(default_factory=list)
 
 
 class AIAction(ContractModel):
     text: str = Field(min_length=1, max_length=2_000)
     evidence_reference_ids: List[str] = Field(default_factory=list)
+    knowledge_reference_ids: List[str] = Field(default_factory=list)
 
 
 class DeterministicAIInput(ContractModel):
@@ -111,6 +129,7 @@ class AIContext(ContractModel):
     deterministic: Dict[str, Any]
     untrusted_data: Dict[str, Any] = Field(default_factory=dict)
     evidence_registry: List[EvidenceReference] = Field(default_factory=list)
+    retrieved_knowledge: List[KnowledgeReference] = Field(default_factory=list)
     context_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
@@ -119,6 +138,7 @@ class PromptPackage(ContractModel):
     task_instructions: str = Field(min_length=1, max_length=4_000)
     structured_context: Dict[str, Any]
     evidence_registry: List[EvidenceReference] = Field(default_factory=list)
+    knowledge_references: List[KnowledgeReference] = Field(default_factory=list)
     output_schema: Dict[str, Any]
     prompt_version: str = PROMPT_VERSION
 
@@ -160,6 +180,7 @@ class AIResponse(ContractModel):
     resume_actions: List[AIAction] = Field(default_factory=list)
     interview_actions: List[AIAction] = Field(default_factory=list)
     evidence_references: List[str] = Field(default_factory=list)
+    knowledge_references: List[str] = Field(default_factory=list)
     citations: List[Citation] = Field(default_factory=list)
     confidence_notes: List[str] = Field(default_factory=list)
     refusal_or_abstention_reason: Optional[str] = Field(default=None, max_length=1_000)
@@ -176,4 +197,3 @@ class AIOrchestrationResult(ContractModel):
     deterministic_result: Dict[str, Any]
     ai: Optional[AIResponse] = None
     error_code: Optional[str] = None
-

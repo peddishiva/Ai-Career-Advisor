@@ -3,6 +3,7 @@
 import json
 import re
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -242,6 +243,23 @@ class JdxrSessionService:
                 "employment_type": parsed_jd.get("employment_type"),
             },
             "match": state.get("match_result"),
+        }
+
+    def get_ai_source(self, session_id: str) -> Dict[str, Any]:
+        """Return only the current session's deterministic AI input boundary."""
+        state = self._read_state(session_id)
+        if state.get("jd", {}).get("status") != "valid" or not state.get("parsed_jd"):
+            raise JdxrSessionError(409, "jd_required", "Validate a job description before requesting AI guidance.")
+        if state.get("resume", {}).get("status") != "valid" or not state.get("parsed_resume"):
+            raise JdxrSessionError(409, "resume_required", "Upload and validate a resume before requesting AI guidance.")
+        if not state.get("match_result"):
+            raise JdxrSessionError(409, "analysis_required", "Compare the resume with the job before requesting AI guidance.")
+        return {
+            "resume_id": state["resume"].get("document_id") or session_id,
+            "jd_id": state["jd"].get("document_id") or session_id,
+            "parsed_resume": deepcopy(state["parsed_resume"]),
+            "parsed_jd": deepcopy(state["parsed_jd"]),
+            "deterministic_result": deepcopy(state["match_result"]),
         }
 
     def public_state(self, state: Dict[str, Any]) -> Dict[str, Any]:

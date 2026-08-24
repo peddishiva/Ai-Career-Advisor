@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FileText, Loader2, Target, Upload, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileText, Loader2, Sparkles, Target, Upload, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,6 +44,19 @@ type JdxrResponse = {
   match?: JobMatchResponse['match'];
 };
 
+type AIEnrichmentResult = {
+  ai_status: 'disabled' | 'unavailable' | 'complete' | 'abstained' | 'invalid';
+  ai?: {
+    summary?: string;
+    strengths?: Array<{ text: string }>;
+    priority_gaps?: Array<{ text: string }>;
+    learning_actions?: Array<{ text: string }>;
+    resume_actions?: Array<{ text: string }>;
+    interview_actions?: Array<{ text: string }>;
+    confidence_notes?: string[];
+  } | null;
+};
+
 const SESSION_KEY = 'jdxrSessionId';
 const RESULT_KEY = 'jdxrResult';
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -57,6 +70,7 @@ export default function JdxrAnalyser() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<AIEnrichmentResult | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   const jdValid = session?.jd?.status === 'valid';
@@ -113,6 +127,7 @@ export default function JdxrAnalyser() {
 
   const clearResult = () => {
     setResult(null);
+    setAiResult(null);
     localStorage.removeItem(RESULT_KEY);
   };
 
@@ -220,6 +235,31 @@ export default function JdxrAnalyser() {
     }
   };
 
+  const generateAiExplanation = async () => {
+    if (!session || !result?.match) return;
+    setIsLoading(true);
+    setLoadingLabel('Generating grounded AI explanation...');
+    setError(null);
+    try {
+      const response = await fetch(apiUrl + '/api/jdxr/session/' + session.session_id + '/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: 'jdxr_match_explanation' }),
+      });
+      const data = await readResponse(response);
+      if (!response.ok || data.success === false) {
+        throw new Error(data.message || 'AI explanation is currently unavailable.');
+      }
+      setAiResult(data as AIEnrichmentResult);
+    } catch (requestError) {
+      setAiResult(null);
+      setError(requestError instanceof Error ? requestError.message : 'AI explanation is currently unavailable.');
+    } finally {
+      setIsLoading(false);
+      setLoadingLabel('');
+    }
+  };
+
   const steps = useMemo(() => [
     { label: 'Job Description', complete: jdValid },
     { label: 'Resume', complete: resumeValid },
@@ -319,6 +359,9 @@ export default function JdxrAnalyser() {
       </Card>
 
       {result?.match && <JobMatchResults result={{ success: true, message: 'Job match analysis completed successfully', job: result.job || {}, match: result.match }} />}
+      {result?.match && (
+        <AIExplanationPanel result={aiResult} loading={isLoading} onGenerate={generateAiExplanation} />
+      )}
     </div>
   );
 }
@@ -347,6 +390,81 @@ function JdConfirmation({ session }: { session: JdxrSession }) {
 function ResumeConfirmation({ session }: { session: JdxrSession }) {
   const resume = session.resume;
   return <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10"><p className="font-semibold text-emerald-800 dark:text-emerald-100">Resume Recognized</p><p className="mt-1 text-sm text-emerald-700 dark:text-emerald-200">{resume.filename}</p><p className="mt-2 text-xs text-emerald-700 dark:text-emerald-200">{resume.experience_count || 0} experiences · {resume.project_count || 0} projects · {resume.education_count || 0} education · {resume.certification_count || 0} certifications</p></div>;
+}
+
+function AIExplanationPanel({
+  result,
+  loading,
+  onGenerate,
+}: {
+  result: AIEnrichmentResult | null;
+  loading: boolean;
+  onGenerate: () => void;
+}) {
+  return (
+    <Card className="border-indigo-200 bg-indigo-50/60 dark:border-indigo-500/30 dark:bg-indigo-500/10">
+      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+            <Sparkles className="h-5 w-5 text-indigo-500" />
+            AI Match Explanation
+          </CardTitle>
+          <CardDescription className="dark:text-gray-300">
+            Optional grounded guidance. The deterministic Job Match Score above remains authoritative.
+          </CardDescription>
+        </div>
+        <Button type="button" onClick={onGenerate} disabled={loading} className="bg-indigo-600 hover:bg-indigo-700">
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+          Generate AI Explanation
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {loading && <p className="text-sm text-gray-600 dark:text-gray-300">Generating grounded explanation...</p>}
+        {!loading && !result && (
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            AI explanation runs only when requested and never changes the deterministic match.
+          </p>
+        )}
+        {!loading && result?.ai_status === 'disabled' && (
+          <p className="text-sm text-gray-600 dark:text-gray-300">AI explanation is disabled. The deterministic match is unchanged.</p>
+        )}
+        {!loading && result?.ai_status === 'unavailable' && (
+          <p className="text-sm text-gray-600 dark:text-gray-300">AI explanation is unavailable right now. The deterministic match remains available.</p>
+        )}
+        {!loading && result?.ai_status === 'abstained' && (
+          <p className="text-sm text-gray-600 dark:text-gray-300">AI explanation abstained because the available evidence was insufficient.</p>
+        )}
+        {!loading && result?.ai_status === 'complete' && result.ai && (
+          <div className="space-y-5">
+            {result.ai.summary && <p className="text-sm leading-6 text-gray-700 dark:text-gray-200">{result.ai.summary}</p>}
+            <AIItems title="Strengths" items={result.ai.strengths} />
+            <AIItems title="Priority Gaps" items={result.ai.priority_gaps} />
+            <AIItems title="Resume Improvements" items={result.ai.resume_actions} />
+            <AIItems title="Interview Preparation" items={result.ai.interview_actions} />
+            {result.ai.confidence_notes?.length ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400">{result.ai.confidence_notes.join(' ')}</p>
+            ) : null}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AIItems({ title, items }: { title: string; items?: Array<{ text: string }> }) {
+  if (!items?.length) return null;
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+      <ul className="mt-2 space-y-2">
+        {items.map((item, index) => (
+          <li key={title + '-' + index} className="rounded-lg border border-indigo-100 bg-white/70 px-3 py-2 text-sm text-gray-700 dark:border-indigo-500/20 dark:bg-gray-900/40 dark:text-gray-200">
+            {item.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function formatBytes(bytes = 0) {

@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List, Mapping, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from config.ai_config import (
     MAX_CONTEXT_CHARS,
@@ -18,6 +18,7 @@ from .contracts import (
     DeterministicAIInput,
     EvidenceReference,
     FlowType,
+    KnowledgeReference,
 )
 
 
@@ -36,7 +37,11 @@ _SECRET_RE = re.compile(r"\b(?:api[_-]?key|secret|token|password)\b\s*[:=]\s*[^\
 class AIContextBuilder:
     """Build a minimal context without reading storage or serializing sessions."""
 
-    def build(self, source: DeterministicAIInput) -> AIContext:
+    def build(
+        self,
+        source: DeterministicAIInput,
+        retrieved_knowledge: Optional[Iterable[KnowledgeReference | Mapping[str, Any]]] = None,
+    ) -> AIContext:
         facts = source.deterministic_facts or {}
         allowed_keys = _RESUME_KEYS if source.flow_type is FlowType.RESUME_ANALYSIS else _JDXR_KEYS
         foreign_keys = set(facts) - allowed_keys
@@ -52,11 +57,13 @@ class AIContextBuilder:
         else:
             deterministic, untrusted, registry = self._build_jdxr_context(facts, source.task)
 
+        knowledge = self._normalize_knowledge(retrieved_knowledge)
         context_payload = {
             "flow_type": source.flow_type.value,
             "deterministic": deterministic,
             "untrusted_data": untrusted,
             "evidence_registry": [item.model_dump(mode="json") for item in registry],
+            "retrieved_knowledge": [item.model_dump(mode="json") for item in knowledge],
         }
         serialized = json.dumps(context_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         if len(serialized) > MAX_CONTEXT_CHARS:
@@ -69,12 +76,51 @@ class AIContextBuilder:
             deterministic=deterministic,
             untrusted_data=untrusted,
             evidence_registry=registry,
+            retrieved_knowledge=knowledge,
             context_hash=context_hash,
         )
 
-    def build_context(self, source: DeterministicAIInput) -> AIContext:
+    def build_context(
+        self,
+        source: DeterministicAIInput,
+        retrieved_knowledge: Optional[Iterable[KnowledgeReference | Mapping[str, Any]]] = None,
+    ) -> AIContext:
         """Explicit alias for callers that prefer verb-based service APIs."""
-        return self.build(source)
+        return self.build(source, retrieved_knowledge=retrieved_knowledge)
+
+    def _normalize_knowledge(
+        self,
+        retrieved_knowledge: Optional[Iterable[KnowledgeReference | Mapping[str, Any]]],
+    ) -> List[KnowledgeReference]:
+        normalized: List[KnowledgeReference] = []
+        seen = set()
+        for item in retrieved_knowledge or ():
+            try:
+                if isinstance(item, KnowledgeReference):
+                    reference = item
+                else:
+                    value = dict(item) if isinstance(item, Mapping) else item.model_dump(mode="json")
+                    if isinstance(value, Mapping) and isinstance(value.get("source"), Mapping):
+                        source = value["source"]
+                        value = {
+                            **value,
+                            "source_id": source.get("source_id"),
+                            "source_title": source.get("source_title"),
+                            "publisher": source.get("publisher"),
+                            "url": source.get("url"),
+                            "source_version": source.get("source_version"),
+                            "knowledge_version": value.get("knowledge_version"),
+                            "trust_level": source.get("trust_level"),
+                        }
+                        value.pop("source", None)
+                    reference = KnowledgeReference.model_validate(value)
+            except Exception as error:
+                raise ContextScopeError("retrieved knowledge does not match the AI context contract") from error
+            if reference.knowledge_id in seen:
+                continue
+            seen.add(reference.knowledge_id)
+            normalized.append(reference)
+        return normalized
 
     def _validate_embedded_scope(self, value: Any, source: DeterministicAIInput) -> None:
         """Reject known session/flow identifiers embedded in unrelated data."""
