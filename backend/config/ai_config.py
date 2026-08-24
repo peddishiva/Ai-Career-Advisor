@@ -8,8 +8,8 @@ from typing import Dict, Tuple
 AI_ENABLED = False
 SUPPORTED_FLOW_TYPES: Tuple[str, ...] = ("resume_analysis", "jdxr")
 
-PROMPT_VERSION = "phase3c.prompt.v1"
-AI_SCHEMA_VERSION = "phase3c.v1"
+PROMPT_VERSION = "phase3d.prompt.v1"
+AI_SCHEMA_VERSION = "phase3d.v1"
 
 REDACT_PII_BY_DEFAULT = True
 REDACT_CANDIDATE_NAME_BY_DEFAULT = True

@@ -20,6 +20,7 @@ from ai.contracts import (
     DeterministicAIInput,
     FlowType,
 )
+from ai.improvement_facts import ImprovementFactsBuilder
 from ai.orchestrator import AIOrchestrator
 
 
@@ -49,6 +50,7 @@ class AIEnrichmentService:
         self.orchestrator = orchestrator or AIOrchestrator()
         self.retriever = retriever or KnowledgeRetriever(build_default_repository())
         self.jdxr_session_service = jdxr_session_service
+        self.improvement_facts_builder = ImprovementFactsBuilder()
 
     def enrich_resume(self, file_id: str, task: AITaskType) -> AIOrchestrationResult:
         stored = self._load_resume_analysis(file_id)
@@ -56,14 +58,24 @@ class AIEnrichmentService:
         if not isinstance(parsed_resume, Mapping):
             raise AIEnrichmentError(422, "resume_analysis_incomplete", "This resume analysis has no structured resume evidence.")
         deterministic_result = self._public_analysis(stored)
+        improvement_facts = (
+            self.improvement_facts_builder.build_resume(parsed_resume, deterministic_result)
+            if task is AITaskType.RESUME_IMPROVEMENT else None
+        )
+        deterministic_hash_input = {
+            "result": deterministic_result,
+            "parsed_resume": dict(parsed_resume),
+            "improvement_facts": improvement_facts,
+        } if improvement_facts is not None else deterministic_result
         source = DeterministicAIInput(
             flow_type=FlowType.RESUME_ANALYSIS,
             session_id=file_id,
             resume_id=file_id,
-            deterministic_result_hash=self._hash(deterministic_result),
+            deterministic_result_hash=self._hash(deterministic_hash_input),
             deterministic_facts={
                 "parsed_resume": deepcopy(dict(parsed_resume)),
                 "analysis": deepcopy(deterministic_result),
+                **({"improvement_facts": improvement_facts} if improvement_facts is not None else {}),
             },
             task=task,
         )
@@ -81,21 +93,44 @@ class AIEnrichmentService:
             raise AIEnrichmentError(500, "jdxr_service_unavailable", "JDxR session service is unavailable.")
         state = service.get_ai_source(session_id)
         deterministic_result = deepcopy(state["deterministic_result"])
+        improvement_facts = (
+            self.improvement_facts_builder.build_jdxr(
+                state["parsed_resume"], state["parsed_jd"], deterministic_result
+            )
+            if task is AITaskType.JDXR_RESUME_IMPROVEMENT else None
+        )
+        deterministic_hash_input = {
+            "result": deterministic_result,
+            "parsed_resume": state["parsed_resume"],
+            "parsed_jd": state["parsed_jd"],
+            "improvement_facts": improvement_facts,
+        } if improvement_facts is not None else deterministic_result
         source = DeterministicAIInput(
             flow_type=FlowType.JDXR,
             session_id=session_id,
             resume_id=state["resume_id"],
             jd_id=state["jd_id"],
-            deterministic_result_hash=self._hash(deterministic_result),
+            deterministic_result_hash=self._hash(deterministic_hash_input),
             deterministic_facts={
                 "parsed_resume": deepcopy(state["parsed_resume"]),
                 "parsed_jd": deepcopy(state["parsed_jd"]),
                 "match_result": deepcopy(deterministic_result),
+                **({"improvement_facts": improvement_facts} if improvement_facts is not None else {}),
             },
             task=task,
         )
         knowledge = self._retrieve(source)
         return self.orchestrator.enrich(source, deterministic_result, retrieved_knowledge=knowledge)
+
+    def enrich_resume_improvements(self, file_id: str) -> AIOrchestrationResult:
+        return self.enrich_resume(file_id, AITaskType.RESUME_IMPROVEMENT)
+
+    def enrich_jdxr_improvements(self, session_id: str, session_service: Any = None) -> AIOrchestrationResult:
+        return self.enrich_jdxr(
+            session_id,
+            AITaskType.JDXR_RESUME_IMPROVEMENT,
+            session_service=session_service,
+        )
 
     def _load_resume_analysis(self, file_id: str) -> Dict[str, Any]:
         if not self.FILE_ID_PATTERN.fullmatch(file_id or ""):
@@ -123,6 +158,7 @@ class AIEnrichmentService:
         analysis = facts.get("analysis") or {}
         jd = facts.get("parsed_jd") or {}
         match = facts.get("match_result") or {}
+        improvement_facts = facts.get("improvement_facts") or {}
 
         skills = set(extract_matched_skills(" ".join(self._string_values(resume.get("skills", [])))))
         roles = set()
@@ -146,6 +182,14 @@ class AIEnrichmentService:
             query_parts.extend(["learning", "interview", "resume"])
             if job_title in ROLE_DEFINITIONS:
                 roles.add(job_title)
+
+        if source.task in {AITaskType.RESUME_IMPROVEMENT, AITaskType.JDXR_RESUME_IMPROVEMENT}:
+            for opportunity in improvement_facts.get("opportunities", [])[:10]:
+                if isinstance(opportunity, Mapping):
+                    query_parts.extend([
+                        str(opportunity.get("title", "")),
+                        str(opportunity.get("knowledge_query", "")),
+                    ])
 
         query = " ".join(query_parts)[:400]
         results = self.retriever.retrieve(

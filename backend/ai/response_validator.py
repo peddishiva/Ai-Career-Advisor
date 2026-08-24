@@ -5,7 +5,7 @@ from typing import Iterable, Protocol, Sequence, Set, runtime_checkable
 
 from pydantic import ValidationError
 
-from .contracts import AIContext, AIResponse
+from .contracts import AIContext, AIResponse, ImprovementItem
 from utils.normalization import extract_matched_skills
 
 
@@ -92,10 +92,57 @@ class AIResponseValidator:
                 context,
             )
 
+        seen_improvements = set()
+        for improvement in parsed.improvements:
+            if improvement.improvement_id in seen_improvements:
+                raise AIResponseValidationError("AI response contains duplicate improvement IDs.")
+            seen_improvements.add(improvement.improvement_id)
+            self._validate_improvement(improvement, context)
+
         self._reject_deterministic_mutation(parsed.model_dump(mode="json"))
-        if parsed.status in {"unavailable", "abstained", "disabled", "invalid"} and not parsed.refusal_or_abstention_reason:
+        if parsed.status in {"unavailable", "abstained", "grounding_failed", "disabled", "invalid"} and not parsed.refusal_or_abstention_reason:
             raise AIResponseValidationError("Unavailable or abstained responses require a reason.")
         return parsed
+
+    def _validate_improvement(self, improvement: ImprovementItem, context: AIContext) -> None:
+        """Require each model item to match a deterministic opportunity."""
+        facts = context.deterministic.get("improvement_facts") or {}
+        expected_items = {
+            str(item.get("improvement_id")): item
+            for item in facts.get("opportunities", [])
+            if isinstance(item, dict) and item.get("improvement_id")
+        }
+        expected = expected_items.get(improvement.improvement_id)
+        if expected is None:
+            raise GroundingValidationError("AI improvement is not present in deterministic improvement facts.")
+
+        for field in ("category", "priority", "action_type", "fact_status"):
+            actual = getattr(getattr(improvement, field), "value", getattr(improvement, field))
+            if actual != expected.get(field):
+                raise GroundingValidationError(f"AI improvement changed deterministic {field}.")
+
+        expected_evidence = set(expected.get("evidence_reference_ids", []))
+        if not set(improvement.evidence_reference_ids).issubset(expected_evidence):
+            raise GroundingValidationError("AI improvement referenced evidence outside its deterministic opportunity.")
+
+        self._validate_claim(
+            improvement.problem,
+            improvement.evidence_reference_ids,
+            improvement.knowledge_reference_ids,
+            {item.evidence_id for item in context.evidence_registry},
+            {item.knowledge_id for item in context.retrieved_knowledge},
+            context,
+        )
+        self._validate_claim(
+            improvement.recommendation,
+            improvement.evidence_reference_ids,
+            improvement.knowledge_reference_ids,
+            {item.evidence_id for item in context.evidence_registry},
+            {item.knowledge_id for item in context.retrieved_knowledge},
+            context,
+        )
+        if improvement.fact_status.value == "TEMPLATE_ONLY" and "template" not in improvement.recommendation.casefold():
+            raise GroundingValidationError("Template-only improvement must be labeled as a template.")
 
     def _validate_claim(
         self,
@@ -132,7 +179,7 @@ class AIResponseValidator:
         mentioned_skills = set(extract_matched_skills(claim))
         possession_language = re.search(
             r"\b(?:you|your|candidate|profile|resume)\b.{0,45}\b(?:have|has|demonstrate|demonstrates|show|shows|"
-            r"experience|skilled|proficient|built|developed|worked)\b",
+            r"skilled|proficient|built|developed|worked)\b",
             normalized_claim,
         ) or re.search(
             r"\b(?:have|has|demonstrate|demonstrates|show|shows|skilled|proficient|built|developed|worked)\b.{0,45}\b"
@@ -142,6 +189,20 @@ class AIResponseValidator:
         if possession_language and mentioned_skills - candidate_skills:
             unknown = sorted(mentioned_skills - candidate_skills)
             raise GroundingValidationError(f"AI claim presents unsupported candidate skills: {', '.join(unknown)}")
+
+        conditional_learning = re.search(
+            r"\b(?:only\s+after|after\s+(?:gaining|you\s+gain|obtaining)|once\s+you\s+have|when\s+you\s+have|"
+            r"(?:learn|learning|gain|gaining)\b[^.]{0,60}\bbefore\b|when\b[^.]{0,60}\bexperience\b)\b",
+            normalized_claim,
+        )
+        if re.search(r"\b(?:add|include|list|claim)\b[^.]{0,80}\b(?:resume|cv)\b", normalized_claim):
+            unsupported = mentioned_skills - candidate_skills
+            if unsupported and not conditional_learning:
+                raise GroundingValidationError(
+                    f"AI claim recommends adding unsupported candidate skills: {', '.join(sorted(unsupported))}"
+                )
+        if re.search(r"\b(?:add|include|list|claim)\b[^.]{0,80}\b(?:degree|certification|certified|qualification|eligibility|experience)\b", normalized_claim) and not conditional_learning:
+            raise GroundingValidationError("AI claim recommends adding an unsupported qualification or experience.")
 
         duration_match = re.search(r"\b(\d+(?:\.\d+)?)\+?\s+years?\b", normalized_claim)
         duration_context = self._resume_context_text(context) if possession_language else self._context_text(context)

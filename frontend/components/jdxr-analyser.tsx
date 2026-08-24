@@ -45,7 +45,7 @@ type JdxrResponse = {
 };
 
 type AIEnrichmentResult = {
-  ai_status: 'disabled' | 'unavailable' | 'complete' | 'abstained' | 'invalid';
+  ai_status: 'disabled' | 'unavailable' | 'complete' | 'abstained' | 'grounding_failed' | 'invalid';
   ai?: {
     summary?: string;
     strengths?: Array<{ text: string }>;
@@ -53,8 +53,22 @@ type AIEnrichmentResult = {
     learning_actions?: Array<{ text: string }>;
     resume_actions?: Array<{ text: string }>;
     interview_actions?: Array<{ text: string }>;
+    improvements?: AIImprovementItem[];
     confidence_notes?: string[];
   } | null;
+};
+
+type AIImprovementItem = {
+  improvement_id: string;
+  category: string;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  title: string;
+  problem: string;
+  recommendation: string;
+  evidence_reference_ids: string[];
+  knowledge_reference_ids: string[];
+  action_type: string;
+  fact_status: string;
 };
 
 const SESSION_KEY = 'jdxrSessionId';
@@ -71,6 +85,9 @@ export default function JdxrAnalyser() {
   const [loadingLabel, setLoadingLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<AIEnrichmentResult | null>(null);
+  const [improvementResult, setImprovementResult] = useState<AIEnrichmentResult | null>(null);
+  const [improvementLoading, setImprovementLoading] = useState(false);
+  const [improvementError, setImprovementError] = useState<string | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   const jdValid = session?.jd?.status === 'valid';
@@ -260,6 +277,27 @@ export default function JdxrAnalyser() {
     }
   };
 
+  const generateResumeImprovements = async () => {
+    if (!session || !result?.match) return;
+    setImprovementLoading(true);
+    setImprovementError(null);
+    try {
+      const response = await fetch(apiUrl + '/api/jdxr/session/' + session.session_id + '/ai/improvements', {
+        method: 'POST',
+      });
+      const data = await readResponse(response);
+      if (!response.ok || data.success === false) {
+        throw new Error(data.message || 'AI improvement guidance is currently unavailable.');
+      }
+      setImprovementResult(data as AIEnrichmentResult);
+    } catch (requestError) {
+      setImprovementResult(null);
+      setImprovementError(requestError instanceof Error ? requestError.message : 'AI improvement guidance is currently unavailable.');
+    } finally {
+      setImprovementLoading(false);
+    }
+  };
+
   const steps = useMemo(() => [
     { label: 'Job Description', complete: jdValid },
     { label: 'Resume', complete: resumeValid },
@@ -362,6 +400,14 @@ export default function JdxrAnalyser() {
       {result?.match && (
         <AIExplanationPanel result={aiResult} loading={isLoading} onGenerate={generateAiExplanation} />
       )}
+      {result?.match && (
+        <AIImprovementPanel
+          result={improvementResult}
+          loading={improvementLoading}
+          error={improvementError}
+          onGenerate={generateResumeImprovements}
+        />
+      )}
     </div>
   );
 }
@@ -434,6 +480,9 @@ function AIExplanationPanel({
         {!loading && result?.ai_status === 'abstained' && (
           <p className="text-sm text-gray-600 dark:text-gray-300">AI explanation abstained because the available evidence was insufficient.</p>
         )}
+        {!loading && result?.ai_status === 'grounding_failed' && (
+          <p className="text-sm text-gray-600 dark:text-gray-300">AI guidance could not be safely validated. The deterministic match remains available.</p>
+        )}
         {!loading && result?.ai_status === 'complete' && result.ai && (
           <div className="space-y-5">
             {result.ai.summary && <p className="text-sm leading-6 text-gray-700 dark:text-gray-200">{result.ai.summary}</p>}
@@ -448,6 +497,78 @@ function AIExplanationPanel({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function AIImprovementPanel({
+  result,
+  loading,
+  error,
+  onGenerate,
+}: {
+  result: AIEnrichmentResult | null;
+  loading: boolean;
+  error: string | null;
+  onGenerate: () => void;
+}) {
+  return (
+    <Card className="border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+            <Sparkles className="h-5 w-5 text-emerald-600" />
+            Improve My Resume for This Job
+          </CardTitle>
+          <CardDescription className="dark:text-gray-300">
+            Grounded suggestions based on this resume and the selected job. The deterministic match remains authoritative.
+          </CardDescription>
+        </div>
+        <Button type="button" onClick={onGenerate} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700">
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+          Generate Resume Improvements
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {loading && <p className="text-sm text-gray-600 dark:text-gray-300">Generating improvement guidance...</p>}
+        {!loading && error && (
+          <div className="flex items-start gap-2 text-sm text-red-700 dark:text-red-200"><AlertTriangle className="mt-0.5 h-4 w-4" />{error}</div>
+        )}
+        {!loading && !error && !result && (
+          <p className="text-sm text-gray-600 dark:text-gray-300">Request targeted improvement guidance after reviewing the deterministic match.</p>
+        )}
+        {!loading && result?.ai_status === 'disabled' && <p className="text-sm text-gray-600 dark:text-gray-300">AI improvement guidance is disabled. The deterministic match is unchanged.</p>}
+        {!loading && result?.ai_status === 'unavailable' && <p className="text-sm text-gray-600 dark:text-gray-300">AI improvement guidance is temporarily unavailable. Your deterministic match is still available.</p>}
+        {!loading && result?.ai_status === 'grounding_failed' && <p className="text-sm text-gray-600 dark:text-gray-300">AI guidance could not be safely validated. Your deterministic match remains available.</p>}
+        {!loading && result?.ai_status === 'complete' && result.ai && (
+          <div className="space-y-4">
+            {result.ai.summary && <p className="text-sm leading-6 text-gray-700 dark:text-gray-200">{result.ai.summary}</p>}
+            <AIImprovementItems items={result.ai.improvements} />
+            <p className="text-xs text-gray-500 dark:text-gray-400">Only add information that is true and verifiable.</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AIImprovementItems({ items }: { items?: AIImprovementItem[] }) {
+  if (!items?.length) return <p className="text-sm text-gray-600 dark:text-gray-300">No grounded improvement priorities were available.</p>;
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Top Changes</h3>
+      {items.map((item) => (
+        <article key={item.improvement_id} className="rounded-lg border border-emerald-100 bg-white/70 p-4 dark:border-emerald-500/20 dark:bg-gray-900/40">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="font-semibold text-gray-900 dark:text-white">{item.title}</h4>
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">{item.priority}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{item.fact_status.replaceAll('_', ' ')}</span>
+          </div>
+          <p className="mt-2 text-sm text-gray-700 dark:text-gray-200"><strong>Why:</strong> {item.problem}</p>
+          <p className="mt-2 text-sm text-gray-700 dark:text-gray-200"><strong>Action:</strong> {item.recommendation}</p>
+          {item.evidence_reference_ids.length > 0 && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Evidence: {item.evidence_reference_ids.join(', ')}</p>}
+        </article>
+      ))}
+    </div>
   );
 }
 

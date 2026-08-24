@@ -26,8 +26,8 @@ class ContextScopeError(ValueError):
     """Raised when input contains data from another workflow or session."""
 
 
-_RESUME_KEYS = {"resume", "parsed_resume", "analysis"}
-_JDXR_KEYS = {"resume", "parsed_resume", "job_description", "parsed_jd", "match", "match_result"}
+_RESUME_KEYS = {"resume", "parsed_resume", "analysis", "improvement_facts"}
+_JDXR_KEYS = {"resume", "parsed_resume", "job_description", "parsed_jd", "match", "match_result", "improvement_facts"}
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d().\-\s]{7,}\d)(?!\w)")
 _PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/]|/)(?:[^\s\\/]+[\\/])+[^\s]+")
@@ -159,6 +159,7 @@ class AIContextBuilder:
                 "section_evidence": safe_resume["section_evidence"],
             },
             "analysis": self._safe_resume_analysis(analysis),
+            "improvement_facts": self._safe_improvement_facts(facts.get("improvement_facts")),
         }
         return deterministic, {"resume_data": resume_untrusted}, registry
 
@@ -183,6 +184,7 @@ class AIContextBuilder:
                 "certifications": safe_jd["certifications"],
             },
             "match": self._safe_match_result(match, registry),
+            "improvement_facts": self._safe_improvement_facts(facts.get("improvement_facts")),
         }
         untrusted = {
             "resume_data": resume_untrusted,
@@ -342,6 +344,12 @@ class AIContextBuilder:
             "candidate_info": candidate_info,
         }
         return safe
+
+    def _safe_improvement_facts(self, facts: Any) -> Dict[str, Any]:
+        """Keep only bounded, redacted deterministic facts for Phase 3D."""
+        if not isinstance(facts, Mapping):
+            return {}
+        return self._sanitize_value(facts)
 
     def _safe_match_result(self, match: Mapping[str, Any], registry: List[EvidenceReference]) -> Dict[str, Any]:
         scalar_keys = (

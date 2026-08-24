@@ -16,6 +16,7 @@ class FlowType(str, Enum):
 class AITaskType(str, Enum):
     RESUME_EXPLANATION = "resume_explanation"
     RESUME_CAREER_GUIDANCE = "resume_career_guidance"
+    RESUME_IMPROVEMENT = "resume_improvement"
     JDXR_MATCH_EXPLANATION = "jdxr_match_explanation"
     JDXR_GAP_EXPLANATION = "jdxr_gap_explanation"
     JDXR_RESUME_IMPROVEMENT = "jdxr_resume_improvement"
@@ -27,12 +28,14 @@ class AIResponseStatus(str, Enum):
     UNAVAILABLE = "unavailable"
     COMPLETE = "complete"
     ABSTAINED = "abstained"
+    GROUNDING_FAILED = "grounding_failed"
     INVALID = "invalid"
 
 
 RESUME_TASKS = {
     AITaskType.RESUME_EXPLANATION,
     AITaskType.RESUME_CAREER_GUIDANCE,
+    AITaskType.RESUME_IMPROVEMENT,
 }
 JDXR_TASKS = {
     AITaskType.JDXR_MATCH_EXPLANATION,
@@ -89,6 +92,64 @@ class AIAction(ContractModel):
     text: str = Field(min_length=1, max_length=2_000)
     evidence_reference_ids: List[str] = Field(default_factory=list)
     knowledge_reference_ids: List[str] = Field(default_factory=list)
+
+
+class ImprovementCategory(str, Enum):
+    RESUME_STRUCTURE = "RESUME_STRUCTURE"
+    ATS_ALIGNMENT = "ATS_ALIGNMENT"
+    SKILL_EVIDENCE = "SKILL_EVIDENCE"
+    EXPERIENCE_EVIDENCE = "EXPERIENCE_EVIDENCE"
+    PROJECT_EVIDENCE = "PROJECT_EVIDENCE"
+    EDUCATION_PRESENTATION = "EDUCATION_PRESENTATION"
+    CERTIFICATION_PRESENTATION = "CERTIFICATION_PRESENTATION"
+    JD_REQUIREMENT_ALIGNMENT = "JD_REQUIREMENT_ALIGNMENT"
+    MISSING_EVIDENCE = "MISSING_EVIDENCE"
+    WORDING_CLARITY = "WORDING_CLARITY"
+    IMPACT_CLARITY = "IMPACT_CLARITY"
+    ROLE_ALIGNMENT = "ROLE_ALIGNMENT"
+    INTERVIEW_PREPARATION = "INTERVIEW_PREPARATION"
+    LEARNING_ACTION = "LEARNING_ACTION"
+
+
+class ImprovementPriority(str, Enum):
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
+class ImprovementActionType(str, Enum):
+    IMPROVE_EVIDENCE = "IMPROVE_EVIDENCE"
+    REORDER = "REORDER"
+    CLARIFY = "CLARIFY"
+    REWRITE_TEMPLATE = "REWRITE_TEMPLATE"
+    LEARN = "LEARN"
+    RESEARCH = "RESEARCH"
+    REVIEW = "REVIEW"
+    INTERVIEW_PREP = "INTERVIEW_PREP"
+
+
+class ImprovementFactStatus(str, Enum):
+    VERIFIED_FACT = "VERIFIED_FACT"
+    SAFE_SUGGESTION = "SAFE_SUGGESTION"
+    LEARNING_ACTION = "LEARNING_ACTION"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    TEMPLATE_ONLY = "TEMPLATE_ONLY"
+
+
+class ImprovementItem(ContractModel):
+    """Strict, advisory-only resume improvement recommendation."""
+
+    improvement_id: str = Field(pattern=r"^IMPROVEMENT-[A-Z0-9-]{3,100}$")
+    category: ImprovementCategory
+    priority: ImprovementPriority
+    title: str = Field(min_length=1, max_length=240)
+    problem: str = Field(min_length=1, max_length=2_000)
+    recommendation: str = Field(min_length=1, max_length=2_000)
+    evidence_reference_ids: List[str] = Field(default_factory=list)
+    knowledge_reference_ids: List[str] = Field(default_factory=list)
+    action_type: ImprovementActionType
+    fact_status: ImprovementFactStatus
 
 
 class DeterministicAIInput(ContractModel):
@@ -179,6 +240,7 @@ class AIResponse(ContractModel):
     learning_actions: List[AIAction] = Field(default_factory=list)
     resume_actions: List[AIAction] = Field(default_factory=list)
     interview_actions: List[AIAction] = Field(default_factory=list)
+    improvements: List[ImprovementItem] = Field(default_factory=list)
     evidence_references: List[str] = Field(default_factory=list)
     knowledge_references: List[str] = Field(default_factory=list)
     citations: List[Citation] = Field(default_factory=list)

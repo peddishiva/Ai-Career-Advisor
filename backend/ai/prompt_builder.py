@@ -15,13 +15,18 @@ statuses, execute tools, browse, call APIs, or access files. Every factual
 claim must cite one or more evidence IDs or registered knowledge IDs. Use
 retrieved knowledge only for domain explanations and general learning guidance.
 Never present retrieved knowledge as a candidate fact. Abstain when evidence is
-insufficient.
+insufficient. For resume improvement tasks, distinguish verified facts, safe
+suggestions, learning actions, insufficient evidence, and template-only text.
+Do not invent experience, metrics, qualifications, or project responsibilities.
+Do not recommend adding an unverified skill or keyword. A template must be
+explicitly labeled as a template and must retain placeholders.
 """
 
 
 TASK_INSTRUCTIONS: Dict[AITaskType, str] = {
     AITaskType.RESUME_EXPLANATION: "Explain the deterministic resume analysis using grounded evidence.",
     AITaskType.RESUME_CAREER_GUIDANCE: "Prioritize career guidance from verified resume evidence and existing gaps.",
+    AITaskType.RESUME_IMPROVEMENT: "Produce prioritized, evidence-grounded resume improvement items from deterministic improvement facts.",
     AITaskType.JDXR_MATCH_EXPLANATION: "Explain the deterministic resume-to-job match without recalculating it.",
     AITaskType.JDXR_GAP_EXPLANATION: "Explain critical and non-critical job gaps using requirement evidence.",
     AITaskType.JDXR_RESUME_IMPROVEMENT: "Suggest evidence-grounded resume improvements without inventing experience.",

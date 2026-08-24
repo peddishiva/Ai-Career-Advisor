@@ -104,7 +104,7 @@ class AIOrchestrator:
                 flow_type=source.flow_type,
                 session_id=source.session_id,
                 context_hash=context.context_hash,
-                ai_status=AIResponseStatus.ABSTAINED,
+                ai_status=AIResponseStatus.GROUNDING_FAILED,
                 deterministic_result=preserved_result,
                 ai=None,
                 error_code="grounding_failed",

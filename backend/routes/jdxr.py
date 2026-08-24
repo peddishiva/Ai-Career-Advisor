@@ -116,3 +116,20 @@ async def generate_jdxr_ai(
         return JSONResponse(status_code=exc.status_code, content={"success": False, "error": exc.error, "message": exc.message})
     except Exception:
         return JSONResponse(status_code=500, content={"success": False, "error": "jdxr_ai_failed", "message": "Unable to generate AI guidance for this session."})
+
+
+@router.post("/jdxr/session/{session_id}/ai/improvements")
+async def generate_jdxr_improvements(session_id: str):
+    """Generate explicit Phase 3D resume improvements for the selected JDxR session."""
+    try:
+        result = ai_enrichment_service.enrich_jdxr_improvements(
+            session_id,
+            session_service=jdxr_session_service,
+        )
+        return JSONResponse(status_code=200, content={"success": True, **result.model_dump(mode="json")})
+    except JdxrSessionError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.payload)
+    except AIEnrichmentError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"success": False, "error": exc.error, "message": exc.message})
+    except Exception:
+        return JSONResponse(status_code=500, content={"success": False, "error": "jdxr_improvements_failed", "message": "Unable to generate resume improvement guidance for this session."})

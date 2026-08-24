@@ -136,6 +136,18 @@ async def generate_analysis_ai(
         return JSONResponse(status_code=exc.status_code, content={"success": False, "error": exc.error, "message": exc.message})
 
 
+@router.post("/analysis/ai/improvements")
+async def generate_analysis_improvements(file_id: str | None = None):
+    """Generate explicit Phase 3D resume improvement guidance for one analysis."""
+    if not file_id:
+        raise HTTPException(status_code=422, detail="An explicit resume analysis file_id is required.")
+    try:
+        result = ai_enrichment_service.enrich_resume_improvements(file_id)
+        return JSONResponse(status_code=200, content={"success": True, **result.model_dump(mode="json")})
+    except AIEnrichmentError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"success": False, "error": exc.error, "message": exc.message})
+
+
 @router.delete("/analysis/{file_id}")
 async def delete_analysis(file_id: str):
     """Delete a specific analysis"""
