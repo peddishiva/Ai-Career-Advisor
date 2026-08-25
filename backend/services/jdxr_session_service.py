@@ -11,11 +11,15 @@ from typing import Any, Dict, Optional
 from config.job_description_config import MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES
 from config.upload_config import MAX_RESUME_FILE_SIZE_BYTES, UPLOAD_COPY_CHUNK_BYTES
 from services.file_upload_service import (
+    InvalidUploadContentError,
     UploadTooLargeError,
     copy_upload_with_limit,
     ensure_text_size,
+    sanitize_upload_filename,
     uploaded_file_size,
+    validate_document_content,
 )
+from config.security_config import MAX_FILENAME_LENGTH
 from services.job_description_parser import JobDescriptionParser
 from services.job_description_validator import JobDescriptionValidator
 from services.job_match_service import JobMatchService
@@ -131,10 +135,14 @@ class JdxrSessionService:
                     )
                 except UploadTooLargeError as exc:
                     raise self._jd_too_large_error() from exc
+            validate_document_content(destination, suffix)
             text = self.jd_parser.extract_text(str(destination))
         except JdxrSessionError:
             self._unlink(destination)
             raise
+        except InvalidUploadContentError as exc:
+            self._unlink(destination)
+            raise JdxrSessionError(400, "corrupted_job_description_document", "Unable to read this JD document. Please upload a valid PDF or DOCX file.") from exc
         except Exception as exc:
             self._unlink(destination)
             raise JdxrSessionError(400, "corrupted_job_description_document", "Unable to read this JD document. Please upload a valid PDF or DOCX file.") from exc
@@ -182,10 +190,14 @@ class JdxrSessionService:
                     )
                 except UploadTooLargeError as exc:
                     raise self._resume_too_large_error() from exc
+            validate_document_content(destination, suffix)
             text = self.resume_parser.extract_text(str(destination))
         except JdxrSessionError:
             self._unlink(destination)
             raise
+        except InvalidUploadContentError as exc:
+            self._unlink(destination)
+            raise JdxrSessionError(400, "corrupted_resume_document", "Unable to read this resume. Please upload a valid PDF or DOCX file.") from exc
         except Exception as exc:
             self._unlink(destination)
             raise JdxrSessionError(400, "corrupted_resume_document", "Unable to read this resume. Please upload a valid PDF or DOCX file.") from exc
@@ -276,7 +288,7 @@ class JdxrSessionService:
         return public
 
     def _validate_upload_name(self, file, allowed_types: set[str], label: str) -> tuple[str, str]:
-        filename = getattr(file, "filename", None) or ""
+        filename = sanitize_upload_filename(getattr(file, "filename", None) or "", MAX_FILENAME_LENGTH)
         suffix = Path(filename).suffix.lower()
         if not filename:
             raise JdxrSessionError(400, f"missing_{label.replace(' ', '_')}", f"Please upload a {label} document.")

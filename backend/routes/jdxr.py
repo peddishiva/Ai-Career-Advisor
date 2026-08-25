@@ -7,13 +7,16 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from ai.contracts import AITaskType
+from config.ai_config import AI_REQUEST_COOLDOWN_SECONDS
 from services.ai_enrichment_service import AIEnrichmentError, AIEnrichmentService
+from services.ai_request_guard import AIRequestGuard
 from services.jdxr_session_service import JdxrSessionError, JdxrSessionService
 
 
 router = APIRouter()
 jdxr_session_service = JdxrSessionService()
 ai_enrichment_service = AIEnrichmentService()
+ai_request_guard = AIRequestGuard(AI_REQUEST_COOLDOWN_SECONDS)
 
 
 class JdxrAIRequest(BaseModel):
@@ -104,6 +107,13 @@ async def generate_jdxr_ai(
             AITaskType.JDXR_INTERVIEW_GUIDANCE,
         }:
             raise AIEnrichmentError(422, "unsupported_ai_task", "This AI task is not supported for JDxR.")
+        if ai_enrichment_service.orchestrator.enabled and not ai_request_guard.allow(
+            "jdxr", session_id, task.value, ""
+        ):
+            return JSONResponse(
+                status_code=429,
+                content={"success": False, "error": "ai_request_cooldown", "message": "Please wait before requesting AI guidance again."},
+            )
         result = ai_enrichment_service.enrich_jdxr(
             session_id,
             task,
@@ -122,6 +132,13 @@ async def generate_jdxr_ai(
 async def generate_jdxr_improvements(session_id: str):
     """Generate explicit Phase 3D resume improvements for the selected JDxR session."""
     try:
+        if ai_enrichment_service.orchestrator.enabled and not ai_request_guard.allow(
+            "jdxr", session_id, AITaskType.JDXR_RESUME_IMPROVEMENT.value, ""
+        ):
+            return JSONResponse(
+                status_code=429,
+                content={"success": False, "error": "ai_request_cooldown", "message": "Please wait before requesting resume improvements again."},
+            )
         result = ai_enrichment_service.enrich_jdxr_improvements(
             session_id,
             session_service=jdxr_session_service,

@@ -13,8 +13,16 @@ from datetime import datetime
 from services.parser_service import ResumeParser
 from services.analysis_service import AnalysisService
 from services.resume_validator import ResumeValidator
-from services.file_upload_service import UploadTooLargeError, copy_upload_with_limit, uploaded_file_size
+from services.file_upload_service import (
+    InvalidUploadContentError,
+    UploadTooLargeError,
+    copy_upload_with_limit,
+    sanitize_upload_filename,
+    uploaded_file_size,
+    validate_document_content,
+)
 from config.upload_config import MAX_RESUME_FILE_SIZE_BYTES, UPLOAD_COPY_CHUNK_BYTES
+from config.security_config import MAX_FILENAME_LENGTH
 
 router = APIRouter()
 
@@ -42,10 +50,11 @@ async def upload_resume(file: UploadFile = File(...)):
     """
     
     # Validate file type
-    if not file.filename:
+    display_filename = sanitize_upload_filename(file.filename or "", MAX_FILENAME_LENGTH)
+    if not display_filename:
         raise HTTPException(status_code=400, detail="No file provided")
     
-    file_ext = Path(file.filename).suffix.lower()
+    file_ext = Path(display_filename).suffix.lower()
     if file_ext not in ['.pdf', '.docx', '.doc']:
         raise HTTPException(
             status_code=400,
@@ -66,6 +75,7 @@ async def upload_resume(file: UploadFile = File(...)):
         # Save uploaded file
         with file_path.open("wb") as buffer:
             _copy_upload_with_limit(file, buffer)
+        validate_document_content(file_path, file_ext)
         
         # Extract text first, then validate before parsing/scoring.
         extracted_text = parser.extract_text(str(file_path))
@@ -92,13 +102,14 @@ async def upload_resume(file: UploadFile = File(...)):
         # Add metadata
         analysis['metadata'] = {
             'file_id': file_id,
-            'filename': file.filename,
+            'filename': display_filename,
             'upload_time': datetime.now().isoformat(),
             'file_type': file_ext
         }
 
         parsed_resume_for_matching = dict(parsed_data)
-        parsed_resume_for_matching.pop('raw_text', None)
+        for private_key in ('raw_text', 'name', 'email', 'phone'):
+            parsed_resume_for_matching.pop(private_key, None)
         stored_analysis = dict(analysis)
         stored_analysis['parsed_resume'] = parsed_resume_for_matching
         
@@ -106,6 +117,10 @@ async def upload_resume(file: UploadFile = File(...)):
         analysis_path = ANALYSIS_DIR / f"{file_id}.json"
         with analysis_path.open("w") as f:
             json.dump(stored_analysis, f, indent=2)
+
+        # The structured analysis is sufficient for later matching and AI context.
+        file_path.unlink(missing_ok=True)
+        file_path = None
         
         # Store in memory for quick access
         latest_analysis['current'] = analysis
@@ -121,6 +136,10 @@ async def upload_resume(file: UploadFile = File(...)):
             }
         )
     
+    except InvalidUploadContentError as exc:
+        if file_path and file_path.exists():
+            file_path.unlink()
+        raise HTTPException(status_code=400, detail="Uploaded resume contents do not match the selected document type.") from exc
     except HTTPException:
         if file_path and file_path.exists():
             file_path.unlink()

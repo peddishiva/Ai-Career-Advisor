@@ -98,7 +98,7 @@ export default function Home() {
       
       // Store analysis data in localStorage for the analysis page
       if (data.analysis) {
-        localStorage.setItem('resumeAnalysis', JSON.stringify(data.analysis));
+        localStorage.setItem('resumeAnalysis', JSON.stringify(sanitizeAnalysisForStorage(data.analysis)));
         if (data.file_id) {
           localStorage.setItem('resumeFileId', data.file_id);
         } else {
@@ -430,4 +430,13 @@ export default function Home() {
       </footer>
     </div>
   );
+}
+
+function sanitizeAnalysisForStorage(analysis: any) {
+  if (!analysis || typeof analysis !== 'object') return analysis;
+  const candidateInfo = analysis.candidate_info && typeof analysis.candidate_info === 'object'
+    ? analysis.candidate_info
+    : {};
+  const { name: _name, email: _email, phone: _phone, ...safeCandidateInfo } = candidateInfo;
+  return { ...analysis, candidate_info: safeCandidateInfo };
 }

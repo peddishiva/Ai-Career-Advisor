@@ -12,7 +12,13 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from config.job_description_config import MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES
-from services.file_upload_service import UploadTooLargeError, copy_upload_with_limit, uploaded_file_size
+from services.file_upload_service import (
+    InvalidUploadContentError,
+    UploadTooLargeError,
+    copy_upload_with_limit,
+    uploaded_file_size,
+    validate_document_content,
+)
 from services.job_match_api_service import JobMatchAPIError, JobMatchAPIService
 
 
@@ -99,6 +105,15 @@ def _save_temp_upload(file: UploadFile, suffix: str) -> Path:
                 )
             except UploadTooLargeError as exc:
                 raise _job_description_file_too_large_error() from exc
+
+        try:
+            validate_document_content(temp_path, suffix)
+        except InvalidUploadContentError as exc:
+            raise JobMatchAPIError(
+                400,
+                "corrupted_job_description_document",
+                "Unable to read this JD document. Please upload a valid PDF or DOCX file.",
+            ) from exc
 
         return temp_path
     except Exception:

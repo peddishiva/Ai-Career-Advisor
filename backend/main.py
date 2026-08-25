@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+from config.security_config import load_cors_origins
+from services.jdxr_retention_service import cleanup_jdxr_storage
 from routes.upload import router as upload_router
 from routes.analysis import router as analysis_router
 from routes.jobs import router as jobs_router
@@ -26,10 +28,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS - Allow all localhost ports for development
+# Configure CORS from an explicit deployment allowlist.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://localhost:\d+",  # Allow any localhost port
+    allow_origins=load_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,6 +40,7 @@ app.add_middleware(
 # Ensure uploads directory exists
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+cleanup_jdxr_storage(UPLOAD_DIR / "jdxr")
 
 # Include routers
 app.include_router(upload_router, prefix="/api", tags=["Upload"])

@@ -66,9 +66,9 @@ class AnalysisService:
             'role_matches': role_matches,
             'next_actions': next_actions,
             'candidate_info': {
-                'name': parsed_data.get('name', 'Candidate'),
-                'email': parsed_data.get('email'),
-                'phone': parsed_data.get('phone'),
+                # Contact fields stay in the local parse boundary and are not
+                # needed by scoring, matching, browser storage, or AI context.
+                'candidate_label': 'Candidate',
                 'skills_count': len(parsed_data.get('skills', [])),
                 'experience_count': len(parsed_data.get('experience', [])),
                 'education_count': len(parsed_data.get('education', [])),

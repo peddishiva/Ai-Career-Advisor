@@ -109,7 +109,8 @@ export default function AnalysisPage() {
     const storedAnalysis = localStorage.getItem('resumeAnalysis');
     if (storedAnalysis) {
       try {
-        const data = JSON.parse(storedAnalysis);
+        const data = sanitizeAnalysisForStorage(JSON.parse(storedAnalysis));
+        localStorage.setItem('resumeAnalysis', JSON.stringify(data));
         setAnalysisData(data);
         setResumeFileId(data?.metadata?.file_id || localStorage.getItem('resumeFileId'));
       } catch (error) {
@@ -587,6 +588,15 @@ export default function AnalysisPage() {
       </main>
     </div>
   );
+}
+
+function sanitizeAnalysisForStorage(analysis: any) {
+  if (!analysis || typeof analysis !== 'object') return analysis;
+  const candidateInfo = analysis.candidate_info && typeof analysis.candidate_info === 'object'
+    ? analysis.candidate_info
+    : {};
+  const { name: _name, email: _email, phone: _phone, ...safeCandidateInfo } = candidateInfo;
+  return { ...analysis, candidate_info: safeCandidateInfo };
 }
 
 function AIItems({ title, items }: { title: string; items?: Array<{ text: string }> }) {

@@ -26,6 +26,7 @@ AI_MAX_OUTPUT_TOKENS = 1_500
 AI_TEMPERATURE = 0.2
 AI_PROVIDER_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 AI_MAX_RETRIEVAL_RESULTS = 5
+AI_REQUEST_COOLDOWN_SECONDS = 10.0
 
 # Cache behavior is intentionally declarative only. No cache is implemented
 # until a later phase defines ownership, TTL, and invalidation rules.

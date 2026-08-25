@@ -7,7 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from config.job_description_config import NOT_A_JOB_DESCRIPTION, UNCERTAIN
+from config.job_description_config import MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES, NOT_A_JOB_DESCRIPTION, UNCERTAIN
+from services.file_upload_service import UploadTooLargeError, ensure_text_size
 from services.job_description_parser import JobDescriptionParser
 from services.job_description_validator import JobDescriptionValidator
 from services.job_match_service import JobMatchService
@@ -165,6 +166,14 @@ class JobMatchAPIService:
             )
 
         if has_text:
+            try:
+                ensure_text_size(job_description_text, MAX_JOB_DESCRIPTION_FILE_SIZE_BYTES)
+            except UploadTooLargeError as exc:
+                raise JobMatchAPIError(
+                    413,
+                    "job_description_too_large",
+                    "Job description text is too large. Please provide a shorter description.",
+                ) from exc
             return job_description_text.strip()
 
         try:

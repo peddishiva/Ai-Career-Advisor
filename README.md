@@ -111,6 +111,8 @@ Upload a resume from the home page to open the independent Resume Analysis workf
 
 Open `/jdxr-analyser` or use **Compare Resume with JD** on the home page. Each comparison creates an isolated local session under `uploads/jdxr/<session-id>/`, validates the job description first, validates the resume second, and then runs the deterministic matcher. It does not call an LLM or external job API. Resume and job-description documents are limited to 5 MB each.
 
+JDxR session files use a seven-day retention window and are cleaned deterministically at backend startup; stale temporary upload fragments are also removed. Recently updated sessions and explicitly active sessions are preserved. Session IDs are UUID-shaped and storage paths are root-scoped, but true per-user ownership cannot be guaranteed until authentication/user identity is introduced.
+
 ### Job Recommendations
 
 Open `/job-recommendation` to browse the recommendation and discovery experience. It is independent from JDxR session state.

@@ -11,7 +11,9 @@ import re
 from pydantic import BaseModel, ConfigDict
 
 from ai.contracts import AITaskType
+from config.ai_config import AI_REQUEST_COOLDOWN_SECONDS
 from services.ai_enrichment_service import AIEnrichmentError, AIEnrichmentService
+from services.ai_request_guard import AIRequestGuard
 
 router = APIRouter()
 
@@ -24,6 +26,7 @@ from routes.upload import latest_analysis
 
 FILE_ID_PATTERN = re.compile(r"^[a-fA-F0-9-]{36}$")
 ai_enrichment_service = AIEnrichmentService()
+ai_request_guard = AIRequestGuard(AI_REQUEST_COOLDOWN_SECONDS)
 
 
 class AIAnalysisRequest(BaseModel):
@@ -43,33 +46,25 @@ def public_analysis_payload(analysis: dict) -> dict:
 async def get_analysis(file_id: str = None):
     """
     Get analysis results
-    
-    If file_id is provided, retrieves specific analysis
-    Otherwise, returns the latest analysis
+
+    An explicit file_id is required so one user's latest upload cannot be
+    returned to another request in this unauthenticated deployment.
     """
     
     try:
-        if file_id:
-            # Load specific analysis from file
-            analysis_path = _safe_analysis_path(file_id)
-            
-            if not analysis_path.exists():
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Analysis not found for file_id: {file_id}"
-                )
-            
-            with analysis_path.open("r") as f:
-                analysis = json.load(f)
-        else:
-            # Return latest analysis from memory
-            if not latest_analysis or 'current' not in latest_analysis:
-                raise HTTPException(
-                    status_code=404,
-                    detail="No analysis available. Please upload a resume first."
-                )
-            
-            analysis = latest_analysis['current']
+        if not file_id:
+            raise HTTPException(status_code=422, detail="An explicit file_id is required to retrieve an analysis.")
+
+        analysis_path = _safe_analysis_path(file_id)
+
+        if not analysis_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Analysis not found for file_id: {file_id}"
+            )
+
+        with analysis_path.open("r", encoding="utf-8") as f:
+            analysis = json.load(f)
         
         return JSONResponse(
             status_code=200,
@@ -89,16 +84,19 @@ async def get_analysis(file_id: str = None):
 
 
 @router.get("/analysis/summary")
-async def get_analysis_summary():
-    """Get a summary of the latest analysis"""
-    
-    if not latest_analysis or 'current' not in latest_analysis:
-        raise HTTPException(
-            status_code=404,
-            detail="No analysis available"
-        )
-    
-    analysis = latest_analysis['current']
+async def get_analysis_summary(file_id: str = None):
+    """Get a summary for one explicit analysis."""
+    if not file_id:
+        raise HTTPException(status_code=422, detail="An explicit file_id is required to retrieve an analysis summary.")
+
+    analysis_path = _safe_analysis_path(file_id)
+    if not analysis_path.exists():
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+    try:
+        with analysis_path.open("r", encoding="utf-8") as handle:
+            analysis = json.load(handle)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Error retrieving analysis summary.") from exc
     
     summary = {
         'fit_score': analysis['overall_insights']['fit_score'],
@@ -123,13 +121,20 @@ async def generate_analysis_ai(
     request: AIAnalysisRequest | None = Body(default=None),
 ):
     """Generate explicit, optional AI enrichment for one resume analysis."""
-    selected_file_id = file_id or latest_analysis.get("file_id")
-    if not selected_file_id:
-        raise HTTPException(status_code=404, detail="No resume analysis is available.")
+    if not file_id:
+        raise HTTPException(status_code=422, detail="An explicit file_id is required for AI analysis.")
+    selected_file_id = file_id
     try:
         task = request.task if request else AITaskType.RESUME_CAREER_GUIDANCE
         if task not in {AITaskType.RESUME_EXPLANATION, AITaskType.RESUME_CAREER_GUIDANCE}:
             raise AIEnrichmentError(422, "unsupported_ai_task", "This AI task is not supported for Resume Analysis.")
+        if ai_enrichment_service.orchestrator.enabled and not ai_request_guard.allow(
+            "resume_analysis", selected_file_id, task.value, ""
+        ):
+            return JSONResponse(
+                status_code=429,
+                content={"success": False, "error": "ai_request_cooldown", "message": "Please wait before requesting AI guidance again."},
+            )
         result = ai_enrichment_service.enrich_resume(selected_file_id, task)
         return JSONResponse(status_code=200, content={"success": True, **result.model_dump(mode="json")})
     except AIEnrichmentError as exc:
@@ -142,6 +147,13 @@ async def generate_analysis_improvements(file_id: str | None = None):
     if not file_id:
         raise HTTPException(status_code=422, detail="An explicit resume analysis file_id is required.")
     try:
+        if ai_enrichment_service.orchestrator.enabled and not ai_request_guard.allow(
+            "resume_analysis", file_id, AITaskType.RESUME_IMPROVEMENT.value, ""
+        ):
+            return JSONResponse(
+                status_code=429,
+                content={"success": False, "error": "ai_request_cooldown", "message": "Please wait before requesting resume improvements again."},
+            )
         result = ai_enrichment_service.enrich_resume_improvements(file_id)
         return JSONResponse(status_code=200, content={"success": True, **result.model_dump(mode="json")})
     except AIEnrichmentError as exc:

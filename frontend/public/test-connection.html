@@ -99,12 +99,14 @@
             const resultsDiv = document.getElementById('results');
             const resultDiv = document.createElement('div');
             resultDiv.className = `test-result ${type}`;
-            resultDiv.innerHTML = `<strong>${title}</strong><br>${message}`;
+            const titleElement = document.createElement('strong');
+            titleElement.textContent = title;
+            resultDiv.append(titleElement, document.createElement('br'), document.createTextNode(message));
             resultsDiv.appendChild(resultDiv);
         }
 
         function clearResults() {
-            document.getElementById('results').innerHTML = '';
+            document.getElementById('results').replaceChildren();
         }
 
         async function testHealthEndpoint() {
