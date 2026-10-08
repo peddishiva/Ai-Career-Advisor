@@ -5,9 +5,11 @@ import { BookOpen } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import JdxrAnalyser from '@/components/jdxr-analyser';
+import { useAuth } from '@/lib/auth/auth-context';
 
 export default function JdxrAnalyserPage() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
@@ -29,6 +31,29 @@ export default function JdxrAnalyserPage() {
             <Button variant="ghost" onClick={() => router.push('/job-recommendation')}>
               Job Recommendations
             </Button>
+            {user ? (
+              <>
+                <Button variant="ghost" onClick={() => router.push('/dashboard')}>
+                  Dashboard
+                </Button>
+                <Button variant="ghost" onClick={() => router.push('/profile')}>
+                  Profile
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    await signOut();
+                    router.push('/auth/login');
+                  }}
+                >
+                  Sign Out
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => router.push('/auth/login')}>
+                Sign In
+              </Button>
+            )}
           </div>
         </div>
       </nav>

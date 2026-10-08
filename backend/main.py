@@ -10,11 +10,14 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from backend/.env and root .env files
+backend_dir = Path(__file__).resolve().parent
+load_dotenv(backend_dir / ".env")
+load_dotenv(backend_dir.parent / ".env")
 
 from config.security_config import load_cors_origins
 from services.jdxr_retention_service import cleanup_jdxr_storage
+from api.v1.router import router as api_v1_router
 from routes.upload import router as upload_router
 from routes.analysis import router as analysis_router
 from routes.jobs import router as jobs_router
@@ -35,6 +38,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_private_network=True,
 )
 
 # Ensure uploads directory exists
@@ -48,6 +52,19 @@ app.include_router(analysis_router, prefix="/api", tags=["Analysis"])
 app.include_router(jobs_router, prefix="/api", tags=["Jobs"])
 app.include_router(job_match_router, prefix="/api", tags=["Job Match"])
 app.include_router(jdxr_router, prefix="/api", tags=["JDxR"])
+app.include_router(api_v1_router, prefix="/api/v1", tags=["API v1"])
+
+
+@app.middleware("http")
+async def mark_legacy_api_responses(request, call_next):
+    """Keep Phase 3 routes compatible while making their migration status explicit."""
+
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/") and not path.startswith("/api/v1/"):
+        response.headers["Deprecation"] = "true"
+        response.headers["X-API-Compatibility"] = "phase3-legacy"
+    return response
 
 @app.get("/")
 async def root():

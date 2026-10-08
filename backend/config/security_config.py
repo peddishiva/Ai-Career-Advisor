@@ -4,7 +4,10 @@ import os
 from urllib.parse import urlparse
 
 
-DEFAULT_CORS_ORIGINS = ("http://localhost:3000",)
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
 MAX_FILENAME_LENGTH = 180
 JDXR_SESSION_RETENTION_SECONDS = 7 * 24 * 60 * 60
 JDXR_TEMP_FILE_RETENTION_SECONDS = 24 * 60 * 60
@@ -17,6 +20,8 @@ def load_cors_origins() -> list[str]:
     origins = []
     for raw_origin in raw_value.split(","):
         origin = raw_origin.strip().rstrip("/")
+        if not origin:
+            continue
         parsed = urlparse(origin)
         if parsed.scheme in {"http", "https"} and parsed.netloc and origin not in origins:
             origins.append(origin)

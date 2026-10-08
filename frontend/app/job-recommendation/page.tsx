@@ -20,6 +20,8 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/lib/auth/auth-context';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
 const jobRecommendations = [
   {
@@ -91,10 +93,11 @@ interface Job {
   experience?: string;
 }
 
-export default function JobRecommendationPage() {
+function JobRecommendationContent() {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const { toast } = useToast();
+  const { signOut } = useAuth();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [jobs, setJobs] = useState<Job[]>(jobRecommendations);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -322,15 +325,33 @@ export default function JobRecommendationPage() {
               <Button
                 variant="ghost"
                 className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                onClick={() => router.push('/settings')}
+                onClick={() => router.push('/dashboard')}
+              >
+                Dashboard
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/jdxr-analyser')}
+              >
+                Compare with JD
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/profile')}
               >
                 Profile
               </Button>
               <Button
-                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
-                onClick={() => router.push('/search')}
+                variant="outline"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={async () => {
+                  await signOut();
+                  router.replace('/auth/login');
+                }}
               >
-                Search
+                Sign Out
               </Button>
             </div>
           </div>
@@ -726,5 +747,13 @@ export default function JobRecommendationPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function JobRecommendationPage() {
+  return (
+    <ProtectedRoute>
+      <JobRecommendationContent />
+    </ProtectedRoute>
   );
 }

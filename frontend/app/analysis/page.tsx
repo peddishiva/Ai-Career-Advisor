@@ -19,6 +19,8 @@ import {
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/lib/auth/auth-context';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
 // Default fallback data
 const defaultSkillProgress = [
@@ -90,9 +92,10 @@ type AIImprovementItem = {
   fact_status: string;
 };
 
-export default function AnalysisPage() {
+function AnalysisContent() {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const { signOut } = useAuth();
   const [analysisData, setAnalysisData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [resumeFileId, setResumeFileId] = useState<string | null>(null);
@@ -276,15 +279,40 @@ export default function AnalysisPage() {
               <Button
                 variant="ghost"
                 className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                onClick={() => router.push('/settings')}
+                onClick={() => router.push('/dashboard')}
+              >
+                Dashboard
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/job-recommendation')}
+              >
+                Job Recommendations
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/jdxr-analyser')}
+              >
+                Compare with JD
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={() => router.push('/profile')}
               >
                 Profile
               </Button>
               <Button
-                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
-                onClick={() => router.push('/search')}
+                variant="outline"
+                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                onClick={async () => {
+                  await signOut();
+                  router.replace('/auth/login');
+                }}
               >
-                Search
+                Sign Out
               </Button>
             </div>
           </div>
@@ -636,5 +664,13 @@ function AIImprovementItems({ items }: { items?: AIImprovementItem[] }) {
       ))}
       <p className="text-xs text-gray-500 dark:text-gray-400">Only add information that is true and verifiable.</p>
     </div>
+  );
+}
+
+export default function AnalysisPage() {
+  return (
+    <ProtectedRoute>
+      <AnalysisContent />
+    </ProtectedRoute>
   );
 }

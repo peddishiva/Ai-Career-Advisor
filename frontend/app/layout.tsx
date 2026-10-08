@@ -5,6 +5,7 @@ import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ToastProvider } from '@/components/ui/toast';
 import { useEffect, useState } from 'react';
+import { AuthProvider } from '@/lib/auth/auth-context';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -31,7 +32,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <ToastProvider>
-              {children}
+              <AuthProvider>{children}</AuthProvider>
             </ToastProvider>
           </ThemeProvider>
         )}

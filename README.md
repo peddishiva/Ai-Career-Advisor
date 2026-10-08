@@ -24,6 +24,8 @@ An intelligent career guidance platform that analyzes resumes and provides perso
 - Python FastAPI
 - pdfplumber (PDF parsing)
 - python-docx (DOCX parsing)
+- SQLAlchemy and Alembic for application persistence
+- Supabase Auth JWT verification and private-storage abstraction
 
 ## 📋 Prerequisites
 
@@ -70,8 +72,13 @@ Create a `.env` file in the root directory (see `.env.example` for reference):
 # Gemini API Key (optional - for advanced AI features)
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Firebase (optional - for authentication)
-FIREBASE_PROJECT_ID=your_project_id
+# Supabase Auth / database / private storage
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_JWT_ISSUER=https://your-project-ref.supabase.co/auth/v1
+SUPABASE_JWKS_URL=https://your-project-ref.supabase.co/auth/v1/.well-known/jwks.json
+SUPABASE_JWT_AUDIENCE=authenticated
+DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/ai_career_advisor
+STORAGE_PROVIDER=local
 ```
 
 **⚠️ IMPORTANT**: Never commit your `.env` file or API keys to Git!
@@ -112,6 +119,12 @@ Upload a resume from the home page to open the independent Resume Analysis workf
 Open `/jdxr-analyser` or use **Compare Resume with JD** on the home page. Each comparison creates an isolated local session under `uploads/jdxr/<session-id>/`, validates the job description first, validates the resume second, and then runs the deterministic matcher. It does not call an LLM or external job API. Resume and job-description documents are limited to 5 MB each.
 
 JDxR session files use a seven-day retention window and are cleaned deterministically at backend startup; stale temporary upload fragments are also removed. Recently updated sessions and explicitly active sessions are preserved. Session IDs are UUID-shaped and storage paths are root-scoped, but true per-user ownership cannot be guaranteed until authentication/user identity is introduced.
+
+### Phase 4A authentication foundation
+
+Phase 4A adds Supabase Auth session handling in the frontend, cryptographic JWT verification in FastAPI, a PostgreSQL-compatible SQLAlchemy/Alembic foundation, a `profiles` table, and `GET/PATCH /api/v1/profile`. PostgreSQL is required for deployed environments; local development defaults to a gitignored SQLite database until `DATABASE_URL` is configured. Private storage uses the local owner-scoped adapter by default and can be switched explicitly to Supabase Storage with `STORAGE_PROVIDER=supabase` and a backend-only service key.
+
+The existing Phase 1-3 `/api` routes remain compatibility routes and are marked with deprecation headers. Resume and JDxR history ownership is intentionally deferred to Phase 4B; existing anonymous filesystem records are not automatically assigned to accounts.
 
 ### Job Recommendations
 
@@ -155,7 +168,7 @@ Required environment variable: `GEMINI_API_KEY`
 
 - All sensitive files are excluded via `.gitignore`
 - API keys should be stored in `.env` files (not committed)
-- Firebase credentials are gitignored
+- Supabase service-role and database credentials remain backend-only
 - Upload directory is excluded from version control
 - Unnecessary `.md` files are excluded (except README.md)
 
