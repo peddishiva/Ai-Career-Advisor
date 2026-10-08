@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDropzone } from 'react-dropzone';
 import { Button } from '@/components/ui/button';
@@ -8,21 +8,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FileUp, Upload, FileText, BarChart3, Lightbulb, BookOpen, X, Moon, Sun } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useTheme } from 'next-themes';
+import { useAuth } from '@/lib/auth/auth-context';
 
 export default function Home() {
   const router = useRouter();
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
+  const { user, signOut } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const uploadRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#upload') {
+      uploadRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, []);
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const selectedFile = acceptedFiles[0];
     if (selectedFile) {
-      // Check file type (PDF or DOCX)
+      // Check file type (PDF or DOCX) - support MIME types and filename extension fallback
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-      if (!validTypes.includes(selectedFile.type)) {
+      const validExtensions = ['.pdf', '.docx'];
+      const hasValidExt = validExtensions.some((ext) => selectedFile.name.toLowerCase().endsWith(ext));
+      if (!validTypes.includes(selectedFile.type) && !hasValidExt) {
         toast({
           title: 'Invalid file type',
           description: 'Please upload a PDF or DOCX file',
@@ -197,19 +207,50 @@ export default function Home() {
               >
                 Compare with JD
               </Button>
-              <Button 
-                variant="ghost" 
-                className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                onClick={() => router.push('/settings')}
-              >
-                Profile
-              </Button>
-              <Button 
-                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
-                onClick={() => router.push('/search')}
-              >
-                Search
-              </Button>
+              {user ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    onClick={() => router.push('/dashboard')}
+                  >
+                    Dashboard
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    onClick={() => router.push('/profile')}
+                  >
+                    Profile
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    onClick={async () => {
+                      await signOut();
+                      router.push('/auth/login');
+                    }}
+                  >
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    className="text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    onClick={() => router.push('/auth/login')}
+                  >
+                    Sign In
+                  </Button>
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
+                    onClick={() => router.push('/auth/signup')}
+                  >
+                    Get Started
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -225,9 +266,27 @@ export default function Home() {
           Get personalized career recommendations based on your skills, interests, and goals with our advanced AI technology.
         </p>
         <div className="flex flex-col sm:flex-row justify-center gap-4">
-          <Button 
-            size="lg" 
-            className="bg-blue-600 hover:bg-blue-700 text-lg h-12 px-8"
+          {user ? (
+            <Button
+              size="lg"
+              className="bg-blue-600 hover:bg-blue-700 text-lg h-12 px-8"
+              onClick={() => router.push('/dashboard')}
+            >
+              Continue to Dashboard
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              className="bg-blue-600 hover:bg-blue-700 text-lg h-12 px-8"
+              onClick={() => router.push('/auth/signup')}
+            >
+              Get Started
+            </Button>
+          )}
+          <Button
+            size="lg"
+            variant="outline"
+            className="text-lg h-12 px-8"
             onClick={scrollToUpload}
           >
             <Upload className="mr-2 h-5 w-5" /> Upload Your Resume
@@ -239,14 +298,6 @@ export default function Home() {
             onClick={() => router.push('/jdxr-analyser')}
           >
             <FileText className="mr-2 h-5 w-5" /> Compare Resume with JD
-          </Button>
-          <Button 
-            size="lg" 
-            variant="outline" 
-            className="text-lg h-12 px-8"
-            onClick={() => router.push('/search')}
-          >
-            Search
           </Button>
         </div>
       </div>
@@ -316,7 +367,7 @@ export default function Home() {
       </div>
 
       {/* Upload Resume Section */}
-      <div ref={uploadRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+      <div id="upload" ref={uploadRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <Card className="w-full max-w-2xl mx-auto dark:bg-gray-800 dark:border-gray-700">
           <CardHeader>
             <CardTitle className="text-2xl dark:text-white">Upload Your Resume</CardTitle>
@@ -389,41 +440,80 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
               <h3 className="text-lg font-semibold mb-4">AI Career Advisor</h3>
-              <p className="text-gray-400">Empowering your career journey with AI-driven insights and guidance.</p>
+              <p className="text-gray-400 text-sm leading-relaxed">
+                Empowering your career journey with deterministic skill analysis and AI-driven career guidance.
+              </p>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Company</h4>
-              <ul className="space-y-2">
-                {['About Us', 'Careers', 'Blog', 'Contact'].map((item) => (
-                  <li key={item}>
-                    <a href="#" className="text-gray-400 hover:text-white">{item}</a>
-                  </li>
-                ))}
+              <h4 className="font-semibold mb-4">Platform</h4>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/analysis')}
+                    className="text-gray-400 hover:text-white transition-colors text-left"
+                  >
+                    Resume Analysis
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/job-recommendation')}
+                    className="text-gray-400 hover:text-white transition-colors text-left"
+                  >
+                    Job Recommendations
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/jdxr-analyser')}
+                    className="text-gray-400 hover:text-white transition-colors text-left"
+                  >
+                    Compare with JD
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={scrollToUpload}
+                    className="text-gray-400 hover:text-white transition-colors text-left"
+                  >
+                    Upload Resume
+                  </button>
+                </li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold mb-4">Resources</h4>
-              <ul className="space-y-2">
-                {['Career Guides', 'Resume Tips', 'Interview Prep', 'Skill Assessment'].map((item) => (
-                  <li key={item}>
-                    <a href="#" className="text-gray-400 hover:text-white">{item}</a>
-                  </li>
-                ))}
+              <ul className="space-y-2 text-sm text-gray-400">
+                <li className="flex items-center gap-2">
+                  <span>Career Guides</span>
+                  <span className="text-[10px] text-gray-400 rounded bg-gray-800 px-1.5 py-0.5">Coming Soon</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>Resume Tips</span>
+                  <span className="text-[10px] text-gray-400 rounded bg-gray-800 px-1.5 py-0.5">Coming Soon</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>Interview Prep</span>
+                  <span className="text-[10px] text-gray-400 rounded bg-gray-800 px-1.5 py-0.5">Coming Soon</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>Skill Benchmarks</span>
+                  <span className="text-[10px] text-gray-400 rounded bg-gray-800 px-1.5 py-0.5">Coming Soon</span>
+                </li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Connect</h4>
-              <div className="flex space-x-4">
-                {['Twitter', 'LinkedIn', 'Facebook', 'Instagram'].map((social) => (
-                  <a key={social} href="#" className="text-gray-400 hover:text-white">
-                    <span className="sr-only">{social}</span>
-                    <span className="h-6 w-6">{social[0]}</span>
-                  </a>
-                ))}
-              </div>
+              <h4 className="font-semibold mb-4">About</h4>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Built with FastAPI and Next.js, AI Career Advisor provides private, deterministic resume parsing and intelligent career matching.
+              </p>
             </div>
           </div>
-          <div className="border-t border-gray-800 mt-12 pt-8 text-center text-gray-400">
+          <div className="border-t border-gray-800 mt-12 pt-8 text-center text-gray-400 text-sm">
             <p>© {new Date().getFullYear()} AI Career Advisor. All rights reserved.</p>
           </div>
         </div>

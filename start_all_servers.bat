@@ -6,7 +6,7 @@ echo.
 
 echo [1/2] Starting Python Backend...
 echo.
-start "AI Career Advisor - Backend" cmd /k "cd backend && python main.py"
+start "AI Career Advisor - Backend" cmd /k "cd backend && (if exist venv\Scripts\python.exe (venv\Scripts\python.exe main.py) else (python main.py))"
 timeout /t 3 /nobreak > nul
 
 echo [2/2] Starting Next.js Frontend...
