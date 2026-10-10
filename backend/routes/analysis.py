@@ -124,6 +124,7 @@ async def generate_analysis_ai(
     if not file_id:
         raise HTTPException(status_code=422, detail="An explicit file_id is required for AI analysis.")
     selected_file_id = file_id
+    _safe_analysis_path(selected_file_id)
     try:
         task = request.task if request else AITaskType.RESUME_CAREER_GUIDANCE
         if task not in {AITaskType.RESUME_EXPLANATION, AITaskType.RESUME_CAREER_GUIDANCE}:
@@ -146,6 +147,7 @@ async def generate_analysis_improvements(file_id: str | None = None):
     """Generate explicit Phase 3D resume improvement guidance for one analysis."""
     if not file_id:
         raise HTTPException(status_code=422, detail="An explicit resume analysis file_id is required.")
+    _safe_analysis_path(file_id)
     try:
         if ai_enrichment_service.orchestrator.enabled and not ai_request_guard.allow(
             "resume_analysis", file_id, AITaskType.RESUME_IMPROVEMENT.value, ""
@@ -198,6 +200,24 @@ async def delete_analysis(file_id: str):
 def _safe_analysis_path(file_id: str) -> Path:
     if not FILE_ID_PATTERN.fullmatch(file_id or ""):
         raise HTTPException(status_code=404, detail="Analysis not found.")
+
+    # Guard: Prevent legacy unauthenticated endpoints from accessing account-owned resumes
+    try:
+        from db.models import Resume
+        from db.session import session_scope
+        from sqlalchemy import select
+
+        with session_scope() as session:
+            account_resume = session.scalar(select(Resume.id).where(Resume.id == file_id))
+            if account_resume is not None:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Account-owned resumes cannot be accessed through legacy unauthenticated endpoints."
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
 
     base = ANALYSIS_DIR.resolve()
     candidate = (base / f"{file_id}.json").resolve()

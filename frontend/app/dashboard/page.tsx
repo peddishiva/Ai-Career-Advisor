@@ -25,10 +25,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth/auth-context';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { authenticatedApiRequest } from '@/lib/api/api-client';
 
 function DashboardContent() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, loading: authLoading } = useAuth();
   const [analysisData, setAnalysisData] = useState<any>(null);
   const [savedJobsCount, setSavedJobsCount] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -36,15 +37,34 @@ function DashboardContent() {
 
   useEffect(() => {
     setMounted(true);
-    // Safely load real application state from localStorage
-    try {
-      const storedAnalysis = localStorage.getItem('resumeAnalysis');
-      if (storedAnalysis) {
-        setAnalysisData(JSON.parse(storedAnalysis));
+    if (authLoading) return;
+
+    if (user) {
+      // Authenticated user: load active resume analysis from API
+      authenticatedApiRequest<any[]>('/api/v1/resumes')
+        .then(async (resumes) => {
+          if (Array.isArray(resumes) && resumes.length > 0) {
+            const active = resumes.find((r) => r.is_active) || resumes[0];
+            const detail = await authenticatedApiRequest<any>(`/api/v1/resumes/${active.id}`);
+            if (detail?.analysis) {
+              setAnalysisData(detail.analysis);
+              return;
+            }
+          }
+          setAnalysisData(null);
+        })
+        .catch(() => {
+          setAnalysisData(null);
+        });
+    } else {
+      try {
+        const storedAnalysis = localStorage.getItem('resumeAnalysis');
+        if (storedAnalysis) {
+          setAnalysisData(JSON.parse(storedAnalysis));
+        }
+      } catch {
+        setAnalysisData(null);
       }
-    } catch {
-      // Storage parsing failure fallback
-      setAnalysisData(null);
     }
 
     try {
@@ -58,7 +78,7 @@ function DashboardContent() {
     } catch {
       setSavedJobsCount(0);
     }
-  }, []);
+  }, [user, authLoading]);
 
   const handleSignOut = async () => {
     await signOut();

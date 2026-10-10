@@ -72,6 +72,27 @@ function formatAuthError(error: { message: string } | null): string | null {
   return msg;
 }
 
+export const ACCOUNT_STORAGE_KEYS = [
+  'resumeAnalysis',
+  'resumeFileId',
+  'savedJobs',
+  'jobAlerts',
+  'jobSearchQuery',
+  'jdxrSessionId',
+  'jdxrResult',
+] as const;
+
+export function clearUserAccountStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    for (const key of ACCOUNT_STORAGE_KEYS) {
+      localStorage.removeItem(key);
+    }
+  } catch (err) {
+    console.error('Failed to clear user account storage:', err);
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,13 +145,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
           break;
         case 'SIGNED_IN':
+          if (typeof window !== 'undefined') {
+            const nextUserId = nextSession?.user?.id;
+            const previousUserId = sessionStorage.getItem('current_auth_user_id');
+            if (previousUserId && nextUserId && previousUserId !== nextUserId) {
+              // Account switched! Purge cached storage from previous account
+              clearUserAccountStorage();
+            } else if (!previousUserId && nextUserId) {
+              // Transitioned from anonymous to authenticated user!
+              // Purge anonymous scratch resume so it does not leak into the authenticated account
+              localStorage.removeItem('resumeAnalysis');
+              localStorage.removeItem('resumeFileId');
+            }
+            if (nextUserId) {
+              sessionStorage.setItem('current_auth_user_id', nextUserId);
+            }
+          }
+          setSession(nextSession);
+          setLoading(false);
+          break;
+        case 'INITIAL_SESSION':
+          if (typeof window !== 'undefined') {
+            const nextUserId = nextSession?.user?.id;
+            const previousUserId = sessionStorage.getItem('current_auth_user_id');
+            if (previousUserId && nextUserId && previousUserId !== nextUserId) {
+              // Account switched in another tab/context
+              clearUserAccountStorage();
+            }
+            if (nextUserId) {
+              sessionStorage.setItem('current_auth_user_id', nextUserId);
+            }
+          }
+          setSession(nextSession);
+          setLoading(false);
+          break;
         case 'TOKEN_REFRESHED':
         case 'USER_UPDATED':
-        case 'INITIAL_SESSION':
           setSession(nextSession);
           setLoading(false);
           break;
         case 'SIGNED_OUT':
+          clearUserAccountStorage();
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('current_auth_user_id');
+          }
           setSession(null);
           setIsPasswordRecovery(false);
           setLoading(false);
@@ -179,6 +237,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async (): Promise<AuthResult> => {
     if (!supabase) return { error: 'Authentication is not configured for this environment.' };
+    clearUserAccountStorage();
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('current_auth_user_id');
+    }
     const { error } = await supabase.auth.signOut();
     setSession(null);
     setIsPasswordRecovery(false);

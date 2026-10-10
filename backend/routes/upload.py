@@ -122,10 +122,6 @@ async def upload_resume(file: UploadFile = File(...)):
         file_path.unlink(missing_ok=True)
         file_path = None
         
-        # Store in memory for quick access
-        latest_analysis['current'] = analysis
-        latest_analysis['file_id'] = file_id
-        
         return JSONResponse(
             status_code=200,
             content={
@@ -160,23 +156,15 @@ async def upload_resume(file: UploadFile = File(...)):
 
 @router.get("/upload/status")
 async def get_upload_status():
-    """Get status of latest upload"""
-    if not latest_analysis:
-        return JSONResponse(
-            status_code=404,
-            content={
-                "success": False,
-                "message": "No resume has been uploaded yet"
-            }
-        )
-    
+    """Deprecated: Global upload status is disabled to prevent cross-user data leakage."""
     return JSONResponse(
-        status_code=200,
+        status_code=410,
         content={
-            "success": True,
-            "has_analysis": True,
-            "file_id": latest_analysis.get('file_id')
-        }
+            "success": False,
+            "error": "deprecated_endpoint",
+            "message": "Global upload status is disabled for privacy. Please track the file_id returned directly from the upload response.",
+        },
+        headers={"Deprecation": "true"},
     )
 
 

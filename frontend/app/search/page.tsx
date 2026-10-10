@@ -75,7 +75,7 @@ export default function SearchPage() {
           
           <div className="mt-8 text-center">
             <p className="text-gray-600 dark:text-gray-300 text-sm">
-              Try searching for: "software engineer", "remote jobs", or "marketing manager"
+              Try searching for: &quot;software engineer&quot;, &quot;remote jobs&quot;, or &quot;marketing manager&quot;
             </p>
           </div>
         </div>

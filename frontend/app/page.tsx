@@ -9,6 +9,7 @@ import { FileUp, Upload, FileText, BarChart3, Lightbulb, BookOpen, X, Moon, Sun 
 import { useToast } from '@/components/ui/use-toast';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/lib/auth/auth-context';
+import { authenticatedApiRequest } from '@/lib/api/api-client';
 
 export default function Home() {
   const router = useRouter();
@@ -54,7 +55,7 @@ export default function Home() {
       
       setFile(selectedFile);
     }
-  }, []);
+  }, [toast]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -82,35 +83,40 @@ export default function Home() {
 
       console.log('Uploading file to backend...');
       
-      // Upload to Python backend (use environment variable for production)
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-      const response = await fetch(`${apiUrl}/api/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      let data: any;
+      if (user) {
+        data = await authenticatedApiRequest<any>('/api/v1/resumes', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const response = await fetch(`${apiUrl}/api/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+        data = await response.json();
 
-      console.log('Response status:', response.status);
-      
-      const data = await response.json();
-
-      if (!response.ok) {
-        const validationMessage = data.validation?.message || data.message;
-        const detailMessage = typeof data.detail === 'string' ? data.detail : data.detail?.message;
-        const error = new Error(validationMessage || detailMessage || 'Upload failed');
-        (error as Error & { validationError?: boolean }).validationError = data.error === 'resume_validation_failed';
-        throw error;
+        if (!response.ok) {
+          const validationMessage = data.validation?.message || data.message;
+          const detailMessage = typeof data.detail === 'string' ? data.detail : data.detail?.message;
+          const error = new Error(validationMessage || detailMessage || 'Upload failed');
+          (error as Error & { validationError?: boolean }).validationError = data.error === 'resume_validation_failed';
+          throw error;
+        }
       }
-      
+
       toast({
         title: 'Upload successful!',
         description: 'Your resume has been analyzed successfully.',
       });
       
+      const returnedFileId = data.file_id || data.resume?.id;
       // Store analysis data in localStorage for the analysis page
       if (data.analysis) {
         localStorage.setItem('resumeAnalysis', JSON.stringify(sanitizeAnalysisForStorage(data.analysis)));
-        if (data.file_id) {
-          localStorage.setItem('resumeFileId', data.file_id);
+        if (returnedFileId) {
+          localStorage.setItem('resumeFileId', returnedFileId);
         } else {
           localStorage.removeItem('resumeFileId');
         }

@@ -21,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/auth-context';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { authenticatedApiRequest } from '@/lib/api/api-client';
 
 // Default fallback data
 const defaultSkillProgress = [
@@ -95,7 +96,7 @@ type AIImprovementItem = {
 function AnalysisContent() {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut, user, loading: authLoading } = useAuth();
   const [analysisData, setAnalysisData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [resumeFileId, setResumeFileId] = useState<string | null>(null);
@@ -107,26 +108,67 @@ function AnalysisContent() {
   const [improvementError, setImprovementError] = useState<string | null>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+  const isAccountResume = Boolean(user && resumeFileId);
+
   useEffect(() => {
-    // Load analysis data from localStorage
-    const storedAnalysis = localStorage.getItem('resumeAnalysis');
-    if (storedAnalysis) {
-      try {
-        const data = sanitizeAnalysisForStorage(JSON.parse(storedAnalysis));
-        localStorage.setItem('resumeAnalysis', JSON.stringify(data));
-        setAnalysisData(data);
-        setResumeFileId(data?.metadata?.file_id || localStorage.getItem('resumeFileId'));
-      } catch (error) {
-        console.error('Error parsing analysis data:', error);
+    let isMounted = true;
+
+    if (authLoading) return;
+
+    if (user) {
+      authenticatedApiRequest<any[]>('/api/v1/resumes')
+        .then(async (resumes) => {
+          if (!isMounted) return;
+          if (Array.isArray(resumes) && resumes.length > 0) {
+            const active = resumes.find((r) => r.is_active) || resumes[0];
+            const detail = await authenticatedApiRequest<any>(`/api/v1/resumes/${active.id}`);
+            if (isMounted && detail?.analysis) {
+              setAnalysisData(detail.analysis);
+              setResumeFileId(active.id);
+              setLoading(false);
+              return;
+            }
+          }
+          // Authenticated user has no saved resumes; do not fall back to anonymous scratch cache
+          setAnalysisData(null);
+          setResumeFileId(null);
+          if (isMounted) setLoading(false);
+        })
+        .catch(() => {
+          if (!isMounted) return;
+          setAnalysisData(null);
+          setResumeFileId(null);
+          setLoading(false);
+        });
+    } else {
+      // Unauthenticated fallback
+      const storedAnalysis = localStorage.getItem('resumeAnalysis');
+      if (storedAnalysis) {
+        try {
+          const data = sanitizeAnalysisForStorage(JSON.parse(storedAnalysis));
+          localStorage.setItem('resumeAnalysis', JSON.stringify(data));
+          setAnalysisData(data);
+          setResumeFileId(data?.metadata?.file_id || localStorage.getItem('resumeFileId'));
+        } catch (error) {
+          console.error('Error parsing analysis data:', error);
+        }
       }
+      if (!storedAnalysis) {
+        setResumeFileId(localStorage.getItem('resumeFileId'));
+      }
+      setLoading(false);
     }
-    if (!storedAnalysis) {
-      setResumeFileId(localStorage.getItem('resumeFileId'));
-    }
-    setLoading(false);
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, authLoading]);
 
   const generateAiGuidance = async () => {
+    if (isAccountResume) {
+      setAiError('AI career guidance is currently unavailable for account-owned resumes. Authenticated AI guidance will be supported in an upcoming stage.');
+      return;
+    }
     if (!resumeFileId) {
       setAiError('Upload a resume and complete deterministic analysis before requesting AI guidance.');
       return;
@@ -156,6 +198,10 @@ function AnalysisContent() {
   };
 
   const generateResumeImprovements = async () => {
+    if (isAccountResume) {
+      setImprovementError('Resume improvement guidance is currently unavailable for account-owned resumes. Authenticated AI guidance will be supported in an upcoming stage.');
+      return;
+    }
     if (!resumeFileId) {
       setImprovementError('Upload a resume and complete deterministic analysis before requesting improvements.');
       return;
@@ -358,16 +404,24 @@ function AnalysisContent() {
               <Button
                 type="button"
                 onClick={generateAiGuidance}
-                disabled={aiLoading || !resumeFileId}
-                className="bg-indigo-600 hover:bg-indigo-700"
+                disabled={aiLoading || !resumeFileId || isAccountResume}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
               >
                 {aiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Generate AI Guidance
+                {isAccountResume ? 'Coming Soon for Account Resumes' : 'Generate AI Guidance'}
               </Button>
             </CardHeader>
             <CardContent>
+              {isAccountResume && (
+                <div className="mb-4 rounded-md border border-indigo-200 bg-indigo-50/70 p-3 text-sm text-indigo-900 dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-200">
+                  <p className="font-medium">Authenticated AI Guidance Coming Soon</p>
+                  <p className="mt-1 text-xs text-indigo-700 dark:text-indigo-300">
+                    AI career guidance for account-saved resumes is currently in development. Your deterministic career scores, skills breakdown, and role matches remain fully available above.
+                  </p>
+                </div>
+              )}
               {aiLoading && <p className="text-sm text-gray-600 dark:text-gray-300">Generating grounded guidance...</p>}
-              {!aiLoading && !aiResult && !aiError && (
+              {!aiLoading && !aiResult && !aiError && !isAccountResume && (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   AI guidance runs only when you request it. Your deterministic results remain available independently.
                 </p>
@@ -423,16 +477,24 @@ function AnalysisContent() {
               <Button
                 type="button"
                 onClick={generateResumeImprovements}
-                disabled={improvementLoading || !resumeFileId}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                disabled={improvementLoading || !resumeFileId || isAccountResume}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
               >
                 {improvementLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Generate Resume Improvements
+                {isAccountResume ? 'Coming Soon for Account Resumes' : 'Generate Resume Improvements'}
               </Button>
             </CardHeader>
             <CardContent>
+              {isAccountResume && (
+                <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+                  <p className="font-medium">Authenticated Resume Improvement Coming Soon</p>
+                  <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                    AI resume improvements for account-saved resumes are currently in development. Your deterministic evidence breakdown is fully accessible above.
+                  </p>
+                </div>
+              )}
               {improvementLoading && <p className="text-sm text-gray-600 dark:text-gray-300">Generating improvement guidance...</p>}
-              {!improvementLoading && !improvementResult && !improvementError && (
+              {!improvementLoading && !improvementResult && !improvementError && !isAccountResume && (
                 <p className="text-sm text-gray-600 dark:text-gray-300">Request improvement guidance when you are ready to review your evidence.</p>
               )}
               {!improvementLoading && improvementError && (

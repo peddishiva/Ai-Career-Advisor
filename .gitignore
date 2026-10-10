@@ -36,6 +36,7 @@ dist/
 .nuxt/
 .nuxt-
 .cache/
+*.tsbuildinfo
 
 # Debug logs
 logs
