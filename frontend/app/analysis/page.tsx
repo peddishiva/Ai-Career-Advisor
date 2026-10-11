@@ -106,6 +106,8 @@ function AnalysisContent() {
   const [improvementResult, setImprovementResult] = useState<AIEnrichmentResult | null>(null);
   const [improvementLoading, setImprovementLoading] = useState(false);
   const [improvementError, setImprovementError] = useState<string | null>(null);
+  const [targetJobDescription, setTargetJobDescription] = useState('');
+  const [showTargetJd, setShowTargetJd] = useState(false);
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
   const isAccountResume = Boolean(user && resumeFileId);
@@ -125,6 +127,18 @@ function AnalysisContent() {
             if (isMounted && detail?.analysis) {
               setAnalysisData(detail.analysis);
               setResumeFileId(active.id);
+              if (detail.analysis.ai_guidance) {
+                setAiResult({
+                  ai_status: 'complete',
+                  ai: detail.analysis.ai_guidance,
+                });
+              }
+              if (detail.analysis.ai_improvements) {
+                setImprovementResult({
+                  ai_status: 'complete',
+                  ai: detail.analysis.ai_improvements,
+                });
+              }
               setLoading(false);
               return;
             }
@@ -165,10 +179,6 @@ function AnalysisContent() {
   }, [user, authLoading]);
 
   const generateAiGuidance = async () => {
-    if (isAccountResume) {
-      setAiError('AI career guidance is currently unavailable for account-owned resumes. Authenticated AI guidance will be supported in an upcoming stage.');
-      return;
-    }
     if (!resumeFileId) {
       setAiError('Upload a resume and complete deterministic analysis before requesting AI guidance.');
       return;
@@ -176,19 +186,39 @@ function AnalysisContent() {
     setAiLoading(true);
     setAiError(null);
     try {
-      const response = await fetch(
-        apiUrl + '/api/analysis/ai?file_id=' + encodeURIComponent(resumeFileId),
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ task: 'resume_career_guidance' }),
-        },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.success === false) {
-        throw new Error(data.message || 'AI guidance is currently unavailable.');
+      if (isAccountResume) {
+        const bodyPayload: any = {
+          task: targetJobDescription.trim() ? 'jdxr_gap_explanation' : 'resume_career_guidance',
+        };
+        if (targetJobDescription.trim()) {
+          bodyPayload.target_job_description = targetJobDescription.trim();
+        }
+        const data = await authenticatedApiRequest<any>(
+          `/api/v1/resumes/${resumeFileId}/ai`,
+          {
+            method: 'POST',
+            body: JSON.stringify(bodyPayload),
+          },
+        );
+        if (!data || data.success === false) {
+          throw new Error(data?.message || 'AI guidance is currently unavailable.');
+        }
+        setAiResult(data as AIEnrichmentResult);
+      } else {
+        const response = await fetch(
+          apiUrl + '/api/analysis/ai?file_id=' + encodeURIComponent(resumeFileId),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task: 'resume_career_guidance' }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success === false) {
+          throw new Error(data.message || 'AI guidance is currently unavailable.');
+        }
+        setAiResult(data as AIEnrichmentResult);
       }
-      setAiResult(data as AIEnrichmentResult);
     } catch (requestError) {
       setAiResult(null);
       setAiError(requestError instanceof Error ? requestError.message : 'AI guidance is currently unavailable.');
@@ -198,10 +228,6 @@ function AnalysisContent() {
   };
 
   const generateResumeImprovements = async () => {
-    if (isAccountResume) {
-      setImprovementError('Resume improvement guidance is currently unavailable for account-owned resumes. Authenticated AI guidance will be supported in an upcoming stage.');
-      return;
-    }
     if (!resumeFileId) {
       setImprovementError('Upload a resume and complete deterministic analysis before requesting improvements.');
       return;
@@ -209,15 +235,32 @@ function AnalysisContent() {
     setImprovementLoading(true);
     setImprovementError(null);
     try {
-      const response = await fetch(
-        apiUrl + '/api/analysis/ai/improvements?file_id=' + encodeURIComponent(resumeFileId),
-        { method: 'POST' },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.success === false) {
-        throw new Error(data.message || 'AI improvement guidance is currently unavailable.');
+      if (isAccountResume) {
+        const bodyPayload = targetJobDescription.trim()
+          ? JSON.stringify({ target_job_description: targetJobDescription.trim() })
+          : undefined;
+        const data = await authenticatedApiRequest<any>(
+          `/api/v1/resumes/${resumeFileId}/ai/improvements`,
+          {
+            method: 'POST',
+            body: bodyPayload,
+          },
+        );
+        if (!data || data.success === false) {
+          throw new Error(data?.message || 'AI improvement guidance is currently unavailable.');
+        }
+        setImprovementResult(data as AIEnrichmentResult);
+      } else {
+        const response = await fetch(
+          apiUrl + '/api/analysis/ai/improvements?file_id=' + encodeURIComponent(resumeFileId),
+          { method: 'POST' },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success === false) {
+          throw new Error(data.message || 'AI improvement guidance is currently unavailable.');
+        }
+        setImprovementResult(data as AIEnrichmentResult);
       }
-      setImprovementResult(data as AIEnrichmentResult);
     } catch (requestError) {
       setImprovementResult(null);
       setImprovementError(requestError instanceof Error ? requestError.message : 'AI improvement guidance is currently unavailable.');
@@ -389,6 +432,32 @@ function AnalysisContent() {
           </div>
         </header>
 
+        <div className="rounded-lg border border-gray-200 bg-white/70 p-4 dark:border-gray-800 dark:bg-gray-900/40">
+          <button
+            type="button"
+            onClick={() => setShowTargetJd(!showTargetJd)}
+            className="flex items-center justify-between w-full text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
+          >
+            <span>Target Job Description Alignment (Optional)</span>
+            <span className="text-xs text-gray-500">{showTargetJd ? 'Hide' : 'Add Target JD'}</span>
+          </button>
+          {showTargetJd && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Paste a target job description to evaluate skill gaps and tailored improvement suggestions against that specific role.
+              </p>
+              <textarea
+                value={targetJobDescription}
+                onChange={(e) => setTargetJobDescription(e.target.value)}
+                placeholder="Paste target job description text here..."
+                maxLength={10000}
+                rows={4}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+        </div>
+
         <section aria-labelledby="ai-guidance-heading">
           <Card className="border-indigo-200 bg-indigo-50/60 dark:border-indigo-500/30 dark:bg-indigo-500/10">
             <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -404,24 +473,16 @@ function AnalysisContent() {
               <Button
                 type="button"
                 onClick={generateAiGuidance}
-                disabled={aiLoading || !resumeFileId || isAccountResume}
+                disabled={aiLoading || !resumeFileId}
                 className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
               >
                 {aiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                {isAccountResume ? 'Coming Soon for Account Resumes' : 'Generate AI Guidance'}
+                {aiLoading ? 'Generating...' : 'Generate AI Guidance'}
               </Button>
             </CardHeader>
             <CardContent>
-              {isAccountResume && (
-                <div className="mb-4 rounded-md border border-indigo-200 bg-indigo-50/70 p-3 text-sm text-indigo-900 dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-200">
-                  <p className="font-medium">Authenticated AI Guidance Coming Soon</p>
-                  <p className="mt-1 text-xs text-indigo-700 dark:text-indigo-300">
-                    AI career guidance for account-saved resumes is currently in development. Your deterministic career scores, skills breakdown, and role matches remain fully available above.
-                  </p>
-                </div>
-              )}
               {aiLoading && <p className="text-sm text-gray-600 dark:text-gray-300">Generating grounded guidance...</p>}
-              {!aiLoading && !aiResult && !aiError && !isAccountResume && (
+              {!aiLoading && !aiResult && !aiError && (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   AI guidance runs only when you request it. Your deterministic results remain available independently.
                 </p>
@@ -443,6 +504,11 @@ function AnalysisContent() {
               {!aiLoading && aiResult?.ai_status === 'abstained' && (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   AI guidance abstained because the available evidence was insufficient.
+                </p>
+              )}
+              {!aiLoading && aiResult?.ai_status === 'grounding_failed' && (
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  AI guidance could not be safely validated against resume evidence. Deterministic analysis remains available.
                 </p>
               )}
               {!aiLoading && aiResult?.ai_status === 'complete' && aiResult.ai && (
@@ -477,24 +543,16 @@ function AnalysisContent() {
               <Button
                 type="button"
                 onClick={generateResumeImprovements}
-                disabled={improvementLoading || !resumeFileId || isAccountResume}
+                disabled={improvementLoading || !resumeFileId}
                 className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
               >
                 {improvementLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                {isAccountResume ? 'Coming Soon for Account Resumes' : 'Generate Resume Improvements'}
+                {improvementLoading ? 'Generating...' : 'Generate Resume Improvements'}
               </Button>
             </CardHeader>
             <CardContent>
-              {isAccountResume && (
-                <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-200">
-                  <p className="font-medium">Authenticated Resume Improvement Coming Soon</p>
-                  <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
-                    AI resume improvements for account-saved resumes are currently in development. Your deterministic evidence breakdown is fully accessible above.
-                  </p>
-                </div>
-              )}
               {improvementLoading && <p className="text-sm text-gray-600 dark:text-gray-300">Generating improvement guidance...</p>}
-              {!improvementLoading && !improvementResult && !improvementError && !isAccountResume && (
+              {!improvementLoading && !improvementResult && !improvementError && (
                 <p className="text-sm text-gray-600 dark:text-gray-300">Request improvement guidance when you are ready to review your evidence.</p>
               )}
               {!improvementLoading && improvementError && (

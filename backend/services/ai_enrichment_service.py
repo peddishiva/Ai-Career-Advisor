@@ -52,8 +52,12 @@ class AIEnrichmentService:
         self.jdxr_session_service = jdxr_session_service
         self.improvement_facts_builder = ImprovementFactsBuilder()
 
-    def enrich_resume(self, file_id: str, task: AITaskType) -> AIOrchestrationResult:
-        stored = self._load_resume_analysis(file_id)
+    def enrich_stored_resume(
+        self,
+        resume_id: str,
+        stored: Mapping[str, Any],
+        task: AITaskType,
+    ) -> AIOrchestrationResult:
         parsed_resume = stored.get("parsed_resume")
         if not isinstance(parsed_resume, Mapping):
             raise AIEnrichmentError(422, "resume_analysis_incomplete", "This resume analysis has no structured resume evidence.")
@@ -69,12 +73,81 @@ class AIEnrichmentService:
         } if improvement_facts is not None else deterministic_result
         source = DeterministicAIInput(
             flow_type=FlowType.RESUME_ANALYSIS,
-            session_id=file_id,
-            resume_id=file_id,
+            session_id=resume_id,
+            resume_id=resume_id,
             deterministic_result_hash=self._hash(deterministic_hash_input),
             deterministic_facts={
                 "parsed_resume": deepcopy(dict(parsed_resume)),
                 "analysis": deepcopy(deterministic_result),
+                **({"improvement_facts": improvement_facts} if improvement_facts is not None else {}),
+            },
+            task=task,
+        )
+        knowledge = self._retrieve(source)
+        return self.orchestrator.enrich(source, deterministic_result, retrieved_knowledge=knowledge)
+
+    def enrich_resume(self, file_id: str, task: AITaskType) -> AIOrchestrationResult:
+        stored = self._load_resume_analysis(file_id)
+        return self.enrich_stored_resume(file_id, stored, task)
+
+    def enrich_stored_resume_improvements(
+        self,
+        resume_id: str,
+        stored: Mapping[str, Any],
+    ) -> AIOrchestrationResult:
+        return self.enrich_stored_resume(resume_id, stored, AITaskType.RESUME_IMPROVEMENT)
+
+    def enrich_stored_resume_with_target_jd(
+        self,
+        resume_id: str,
+        stored: Mapping[str, Any],
+        target_jd_text: str,
+        task: AITaskType,
+        jd_parser: Optional[Any] = None,
+        matcher: Optional[Any] = None,
+    ) -> AIOrchestrationResult:
+        parsed_resume = stored.get("parsed_resume")
+        if not isinstance(parsed_resume, Mapping):
+            raise AIEnrichmentError(422, "resume_analysis_incomplete", "This resume analysis has no structured resume evidence.")
+        if not target_jd_text or not str(target_jd_text).strip():
+            raise AIEnrichmentError(422, "empty_target_job_description", "Target job description text cannot be empty.")
+
+        from services.job_description_parser import JobDescriptionParser
+        from services.job_match_service import JobMatchService
+
+        active_jd_parser = jd_parser or JobDescriptionParser()
+        active_matcher = matcher or JobMatchService()
+
+        try:
+            parsed_jd = active_jd_parser.parse_text(str(target_jd_text).strip()[:10_000])
+        except Exception as error:
+            raise AIEnrichmentError(422, "job_description_parsing_failed", "Unable to parse the target job description.") from error
+
+        deterministic_result = deepcopy(active_matcher.match(dict(parsed_resume), dict(parsed_jd)))
+        improvement_facts = (
+            self.improvement_facts_builder.build_jdxr(
+                parsed_resume, parsed_jd, deterministic_result
+            )
+            if task is AITaskType.JDXR_RESUME_IMPROVEMENT else None
+        )
+        deterministic_hash_input = {
+            "result": deterministic_result,
+            "parsed_resume": dict(parsed_resume),
+            "parsed_jd": dict(parsed_jd),
+            "improvement_facts": improvement_facts,
+        } if improvement_facts is not None else deterministic_result
+
+        jd_hash = self._hash({"raw_jd": str(target_jd_text).strip()[:1000]})[:16]
+        source = DeterministicAIInput(
+            flow_type=FlowType.JDXR,
+            session_id=resume_id,
+            resume_id=resume_id,
+            jd_id=f"target-jd-{jd_hash}",
+            deterministic_result_hash=self._hash(deterministic_hash_input),
+            deterministic_facts={
+                "parsed_resume": deepcopy(dict(parsed_resume)),
+                "parsed_jd": deepcopy(dict(parsed_jd)),
+                "match_result": deepcopy(deterministic_result),
                 **({"improvement_facts": improvement_facts} if improvement_facts is not None else {}),
             },
             task=task,

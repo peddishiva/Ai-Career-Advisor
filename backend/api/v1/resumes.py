@@ -9,15 +9,20 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ai.contracts import AITaskType, AIResponseStatus, RESUME_TASKS, JDXR_TASKS
 from auth.dependencies import require_authenticated_user
 from auth.models import AuthenticatedUser
+from config.ai_config import AI_REQUEST_COOLDOWN_SECONDS
 from config.security_config import MAX_FILENAME_LENGTH
 from config.upload_config import MAX_RESUME_FILE_SIZE_BYTES, UPLOAD_COPY_CHUNK_BYTES
 from db.repositories import ResumeRepository
 from db.session import get_db
+from services.ai_enrichment_service import AIEnrichmentError, AIEnrichmentService
+from services.ai_request_guard import AIRequestGuard
 from services.analysis_service import AnalysisService
 from services.file_upload_service import (
     InvalidUploadContentError,
@@ -42,6 +47,21 @@ resume_repository = ResumeRepository()
 parser = ResumeParser()
 analyzer = AnalysisService()
 resume_validator = ResumeValidator()
+ai_enrichment_service = AIEnrichmentService()
+ai_request_guard = AIRequestGuard(AI_REQUEST_COOLDOWN_SECONDS)
+
+
+class AuthenticatedAIRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task: AITaskType = AITaskType.RESUME_CAREER_GUIDANCE
+    target_job_description: str | None = Field(default=None, max_length=10_000)
+
+
+class AuthenticatedAIImprovementsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_job_description: str | None = Field(default=None, max_length=10_000)
 
 
 def get_storage_service() -> StorageService:
@@ -382,3 +402,199 @@ def activate_resume(
     db.commit()
     db.refresh(resume)
     return ResumeSummaryResponse.model_validate(resume)
+
+
+@router.post("/{resume_id}/ai")
+def generate_resume_ai(
+    resume_id: str,
+    request: AuthenticatedAIRequest | None = None,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    """Generate explicit, grounded AI career guidance for an authenticated owner's resume."""
+    resume = resume_repository.get_by_id(db, resume_id=resume_id, user_id=current_user.user_id)
+    if resume is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
+
+    ensure_user_scope(current_user, resume.user_id)
+    analysis = resume_repository.get_analysis_by_resume_id(db, resume_id=resume.id, user_id=current_user.user_id)
+    if analysis is None or not analysis.analysis_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume analysis not found.")
+
+    task = request.task if request else AITaskType.RESUME_CAREER_GUIDANCE
+    target_jd = request.target_job_description if request else None
+
+    # Enforce request throttling/cooldown per (user, resume, task)
+    if ai_enrichment_service.orchestrator.enabled and not ai_request_guard.allow(
+        "authenticated_resume", f"{current_user.user_id}:{resume.id}", task.value, ""
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "success": False,
+                "error": "ai_request_cooldown",
+                "message": "Please wait before requesting AI guidance again.",
+            },
+        )
+
+    try:
+        if target_jd and target_jd.strip():
+            active_task = task if task in JDXR_TASKS else AITaskType.JDXR_GAP_EXPLANATION
+            result = ai_enrichment_service.enrich_stored_resume_with_target_jd(
+                resume.id,
+                analysis.analysis_data,
+                target_jd.strip(),
+                active_task,
+            )
+        else:
+            if task not in RESUME_TASKS:
+                raise AIEnrichmentError(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "unsupported_ai_task",
+                    "This AI task is not supported for Resume Analysis.",
+                )
+            active_task = task
+            result = ai_enrichment_service.enrich_stored_resume(
+                resume.id,
+                analysis.analysis_data,
+                active_task,
+            )
+
+        # Persist completed guidance into analysis record for verified owner
+        if result.ai_status == AIResponseStatus.COMPLETE and result.ai is not None:
+            updated_data = dict(analysis.analysis_data)
+            if active_task == AITaskType.RESUME_IMPROVEMENT or (target_jd and active_task == AITaskType.JDXR_RESUME_IMPROVEMENT):
+                updated_data["ai_improvements"] = result.ai.model_dump(mode="json")
+            else:
+                updated_data["ai_guidance"] = result.ai.model_dump(mode="json")
+            updated_data["ai_metadata"] = {
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "task": active_task.value,
+                "has_target_jd": bool(target_jd and target_jd.strip()),
+            }
+            analysis.analysis_data = updated_data
+            try:
+                db.commit()
+            except SQLAlchemyError as exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database persistence failed for AI guidance.",
+                ) from exc
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"success": True, **result.model_dump(mode="json")},
+        )
+    except AIEnrichmentError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"success": False, "error": exc.error, "message": exc.message},
+        )
+
+
+@router.post("/{resume_id}/ai/improvements")
+def generate_resume_improvements(
+    resume_id: str,
+    request: AuthenticatedAIImprovementsRequest | None = None,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    """Generate explicit, evidence-backed resume improvement recommendations for the verified owner."""
+    resume = resume_repository.get_by_id(db, resume_id=resume_id, user_id=current_user.user_id)
+    if resume is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
+
+    ensure_user_scope(current_user, resume.user_id)
+    analysis = resume_repository.get_analysis_by_resume_id(db, resume_id=resume.id, user_id=current_user.user_id)
+    if analysis is None or not analysis.analysis_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume analysis not found.")
+
+    target_jd = request.target_job_description if request else None
+
+    if ai_enrichment_service.orchestrator.enabled and not ai_request_guard.allow(
+        "authenticated_resume",
+        f"{current_user.user_id}:{resume.id}",
+        AITaskType.RESUME_IMPROVEMENT.value,
+        "",
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "success": False,
+                "error": "ai_request_cooldown",
+                "message": "Please wait before requesting resume improvements again.",
+            },
+        )
+
+    try:
+        if target_jd and target_jd.strip():
+            result = ai_enrichment_service.enrich_stored_resume_with_target_jd(
+                resume.id,
+                analysis.analysis_data,
+                target_jd.strip(),
+                AITaskType.JDXR_RESUME_IMPROVEMENT,
+            )
+        else:
+            result = ai_enrichment_service.enrich_stored_resume_improvements(
+                resume.id,
+                analysis.analysis_data,
+            )
+
+        # Persist completed improvements
+        if result.ai_status == AIResponseStatus.COMPLETE and result.ai is not None:
+            updated_data = dict(analysis.analysis_data)
+            updated_data["ai_improvements"] = result.ai.model_dump(mode="json")
+            updated_data["ai_metadata"] = {
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "task": (
+                    AITaskType.JDXR_RESUME_IMPROVEMENT.value
+                    if target_jd and target_jd.strip()
+                    else AITaskType.RESUME_IMPROVEMENT.value
+                ),
+                "has_target_jd": bool(target_jd and target_jd.strip()),
+            }
+            analysis.analysis_data = updated_data
+            try:
+                db.commit()
+            except SQLAlchemyError as exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database persistence failed for resume improvements.",
+                ) from exc
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"success": True, **result.model_dump(mode="json")},
+        )
+    except AIEnrichmentError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"success": False, "error": exc.error, "message": exc.message},
+        )
+
+
+@router.get("/{resume_id}/ai")
+def get_resume_ai(
+    resume_id: str,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    """Retrieve persisted AI guidance and improvements for an authenticated owner's resume."""
+    resume = resume_repository.get_by_id(db, resume_id=resume_id, user_id=current_user.user_id)
+    if resume is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
+
+    ensure_user_scope(current_user, resume.user_id)
+    analysis = resume_repository.get_analysis_by_resume_id(db, resume_id=resume.id, user_id=current_user.user_id)
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume analysis not found.")
+
+    analysis_data = analysis.analysis_data or {}
+    return {
+        "success": True,
+        "ai_guidance": analysis_data.get("ai_guidance"),
+        "ai_improvements": analysis_data.get("ai_improvements"),
+        "ai_metadata": analysis_data.get("ai_metadata"),
+    }
